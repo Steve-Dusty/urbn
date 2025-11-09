@@ -32,6 +32,7 @@ from .document_manager import get_parsed_context
 from .city_data_agent import city_data_agent_stream, collect_city_data_sync
 from .policy_analysis_agent import analyze_policy_document_stream, analyze_policy_document_sync
 from .mapbox_agent import generate_map_visualization
+from .simulation_agent import run_simulation_stream
 from .thoughts_stream_agent import (
     get_thoughts_stream,
     emit_thought,
@@ -120,6 +121,10 @@ def supervisor_agent(state: AgentState) -> AgentState:
         next_agent = "mapbox"
         print("🗺️  Routing to: MAPBOX AGENT (generate map visualizations from policy)")
 
+    elif action == "run_simulation":
+        next_agent = "simulation_stream"
+        print("🎬 Routing to: SIMULATION STREAM (real-time policy impact simulation)")
+
     else:
         # Use LLM to determine intent if action not specified
         print("🤔 No explicit action - analyzing user intent...")
@@ -139,6 +144,7 @@ Available agents:
 - policy_analysis: Analyze policy document intent and extract simulation parameters
 - thoughts_stream: Get live stream of agent reasoning and decisions
 - generate_map: Generate map visualization with context-relevant indicators from policy
+- run_simulation: Stream real-time policy impact simulation with agent activities
 
 Respond with ONLY the agent name, nothing else."""
 
@@ -244,6 +250,40 @@ def simulation_agent_node(state: AgentState) -> AgentState:
     state["next_agent"] = "end"
 
     print("⚠️  Simulation agent placeholder")
+    print("="*60 + "\n")
+
+    return state
+
+
+def simulation_stream_agent_node(state: AgentState) -> AgentState:
+    """Simulation Stream agent - streams real-time policy impact simulation."""
+    print("\n" + "="*60)
+    print("🎬 SIMULATION STREAM AGENT: Starting real-time simulation")
+    print("="*60 + "\n")
+
+    # Get simulation parameters from metadata
+    metadata = state.get("metadata", {})
+    simulation_type = metadata.get("simulation_type", "Urban Traffic")
+    granularity = metadata.get("granularity", "Macro")
+    time_horizon = metadata.get("time_horizon", 10)
+
+    emit_thought(
+        agent_type=AgentType.SIMULATION_AGENT,
+        thought_type=ThoughtType.ACTION,
+        message=f"Starting {simulation_type} simulation ({granularity} level)",
+        metadata={"simulation_type": simulation_type, "granularity": granularity}
+    )
+
+    # Return streaming generator
+    state["response"] = run_simulation_stream(
+        simulation_type=simulation_type,
+        granularity=granularity,
+        time_horizon=time_horizon
+    )
+    state["messages"].append(f"SimulationStream: Starting {simulation_type} simulation")
+    state["next_agent"] = "end"
+
+    print("✓ Simulation stream initialized")
     print("="*60 + "\n")
 
     return state
@@ -458,7 +498,7 @@ def mapbox_agent_node(state: AgentState) -> AgentState:
     return state
 
 
-def route_next(state: AgentState) -> Literal["parser", "chat", "scraper", "simulation", "debate", "aggregator", "city_data", "policy_analysis", "thoughts_stream", "mapbox", "end"]:
+def route_next(state: AgentState) -> Literal["parser", "chat", "scraper", "simulation", "simulation_stream", "debate", "aggregator", "city_data", "policy_analysis", "thoughts_stream", "mapbox", "end"]:
     """Router function that determines next node based on supervisor decision."""
     next_agent = state.get("next_agent", "end")
     print(f"🔀 ROUTER: Next destination -> {next_agent}")
@@ -483,6 +523,7 @@ def create_workflow() -> StateGraph:
     workflow.add_node("policy_analysis", policy_analysis_agent_node)
     workflow.add_node("thoughts_stream", thoughts_stream_agent_node)
     workflow.add_node("mapbox", mapbox_agent_node)
+    workflow.add_node("simulation_stream", simulation_stream_agent_node)
 
     # Set entry point
     workflow.set_entry_point("supervisor")
@@ -502,6 +543,7 @@ def create_workflow() -> StateGraph:
             "policy_analysis": "policy_analysis",
             "thoughts_stream": "thoughts_stream",
             "mapbox": "mapbox",
+            "simulation_stream": "simulation_stream",
             "end": END
         }
     )
@@ -517,6 +559,7 @@ def create_workflow() -> StateGraph:
     workflow.add_edge("policy_analysis", END)
     workflow.add_edge("thoughts_stream", END)
     workflow.add_edge("mapbox", END)
+    workflow.add_edge("simulation_stream", END)
 
     return workflow.compile()
 

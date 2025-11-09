@@ -15,6 +15,7 @@ class AgentType(Enum):
     POLICY_ANALYSIS = "PolicyAnalysisAgent"
     CITY_DATA = "CityDataAgent"
     SIMULATION = "SimulationAgent"
+    SIMULATION_AGENT = "SimulationAgent"
     MAP = "MapAgent"
     MAPBOX_AGENT = "MapboxAgent"
     CHAT = "ChatAgent"

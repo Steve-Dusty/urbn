@@ -57,6 +57,10 @@ export async function POST(request: NextRequest) {
       // Handle generic orchestrate requests (city_data, parse, etc.)
       const body = await request.json();
 
+      // Check if this is a streaming action (chat, run_simulation, etc.)
+      const streamingActions = ['chat', 'run_simulation', 'city_data', 'policy_analysis'];
+      const isStreaming = streamingActions.includes(body.action) && body.stream !== false;
+
       const response = await fetch(`${BACKEND_URL}/orchestrate`, {
         method: 'POST',
         headers: {
@@ -69,6 +73,24 @@ export async function POST(request: NextRequest) {
         throw new Error('Orchestrate failed');
       }
 
+      // Return streaming response for streaming actions
+      if (isStreaming) {
+        // Ensure we're returning the stream properly
+        if (!response.body) {
+          throw new Error('No response body for streaming action');
+        }
+        
+        return new Response(response.body, {
+          headers: {
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache, no-transform',
+            'Connection': 'keep-alive',
+            'X-Accel-Buffering': 'no',
+          },
+        });
+      }
+
+      // Return JSON response for non-streaming actions
       const data = await response.json();
       return NextResponse.json(data);
     }
