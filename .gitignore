@@ -3,19 +3,32 @@ node_modules/
 .pnp
 .pnp.js
 __pycache__/
+*.pyc
+*.pyo
+
+# Python virtual environment
+.venv/
+venv/
+env/
+ENV/
+
 # Environment variables
 .env
 .env.local
 .env.development.local
 .env.test.local
 .env.production.local
-.next
 
-.venv
+# Next.js
+.next/
+out/
+*.tsbuildinfo
+next-env.d.ts
+
 # Build outputs
 dist/
 build/
-*.tsbuildinfo
+.cache/
 
 # Logs
 logs/
@@ -24,6 +37,7 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 lerna-debug.log*
+pnpm-debug.log*
 
 # IDE
 .vscode/
@@ -31,17 +45,36 @@ lerna-debug.log*
 *.swp
 *.swo
 *~
+*.sublime-project
+*.sublime-workspace
 
 # OS
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
 
-# Uploads
+# Testing
+coverage/
+.nyc_output/
+*.test.js.snap
+
+# Uploads & Temp
 uploads/
 temp/
+documents/
 
 # Database
 *.db
 *.sqlite
+*.sqlite3
+
+# Package manager locks (optional - comment out if you want to commit them)
+# package-lock.json
+# yarn.lock
+# pnpm-lock.yaml
 
 
