@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Play, Upload, MapPin, Send, Users, Building2, Car, TrendingUp, Zap, Map as MapIcon, X, FileText } from 'lucide-react';
+import { ArrowLeft, Play, Upload, MapPin, Send, Users, Building2, Car, TrendingUp, Zap, Map as MapIcon, X, FileText, Trash2 } from 'lucide-react';
 import { DynamicSimulationMap } from '../components/DynamicSimulationMap';
 import { simulationsService, policyDocsService } from '../services/storage';
 
@@ -25,6 +25,14 @@ export function SimulationsPage() {
   // Agent Thoughts Stream State
   const [agentThoughts, setAgentThoughts] = useState<any[]>([]);
 
+  // Simulation Stream State
+  const [showSimulationModal, setShowSimulationModal] = useState(false);
+  const [simulationStream, setSimulationStream] = useState<any[]>([]);
+  const [currentPhase, setCurrentPhase] = useState<string>('');
+  const [simulationProgress, setSimulationProgress] = useState(0);
+  const [simulationMetrics, setSimulationMetrics] = useState<any>(null);
+  const [simulationSummary, setSimulationSummary] = useState<string>('');
+
   // Left Modal State
   const [simulationFocus, setSimulationFocus] = useState('Urban Traffic');
   const [perspectiveMode, setPerspectiveMode] = useState<'Macro' | 'Micro'>('Macro');
@@ -43,6 +51,97 @@ export function SimulationsPage() {
   const [chatInput, setChatInput] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
   const chatMessagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Persist state to localStorage
+  const STORAGE_KEY = 'simulation_page_state';
+
+  // Load persisted state on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        const state = JSON.parse(saved);
+        if (state.city) setCity(state.city);
+        if (state.uploadedPolicyDoc) {
+          const fileData = state.uploadedPolicyDoc;
+          if (fileData.name) {
+            setUploadedPolicyDoc(fileData as any);
+          }
+        }
+        if (state.cityData) setCityData(state.cityData);
+        if (state.policyAnalysis) setPolicyAnalysis(state.policyAnalysis);
+        if (state.mapVisualization) setMapVisualization(state.mapVisualization);
+        if (state.simulationFocus) setSimulationFocus(state.simulationFocus);
+        if (state.perspectiveMode) setPerspectiveMode(state.perspectiveMode);
+        console.log('✅ Restored state from localStorage');
+      }
+    } catch (e) {
+      console.error('Error loading persisted state:', e);
+    }
+  }, []);
+
+  // Save state to localStorage whenever key data changes
+  useEffect(() => {
+    try {
+      const stateToSave = {
+        city,
+        uploadedPolicyDoc: uploadedPolicyDoc ? {
+          name: uploadedPolicyDoc.name,
+          size: uploadedPolicyDoc.size,
+          type: uploadedPolicyDoc.type,
+          lastModified: uploadedPolicyDoc.lastModified
+        } : null,
+        cityData,
+        policyAnalysis,
+        mapVisualization,
+        simulationFocus,
+        perspectiveMode
+      };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(stateToSave));
+    } catch (e) {
+      console.error('Error saving state to localStorage:', e);
+    }
+  }, [city, uploadedPolicyDoc, cityData, policyAnalysis, mapVisualization, simulationFocus, perspectiveMode]);
+
+  // Clear persisted state function
+  const clearPersistedState = async () => {
+    if (confirm('⚠️ Are you sure you want to clear all persisted data? This will reset everything to a fresh state.')) {
+      try {
+        // Clear localStorage
+        localStorage.removeItem(STORAGE_KEY);
+        
+        // Clear all state
+        setCity('');
+        setUploadedPolicyDoc(null);
+        setCityData(null);
+        setPolicyAnalysis(null);
+        setMapVisualization(null);
+        setSimulationStream([]);
+        setSimulationMetrics(null);
+        setSimulationSummary('');
+        setSimulationProgress(0);
+        setCurrentPhase('');
+        setRunningSimulation(null);
+        setShowSimulationModal(false);
+        
+        // Clear backend cache
+        try {
+          await fetch('http://localhost:8000/simulation/cache/clear', {
+            method: 'DELETE',
+          });
+          console.log('✅ Backend cache cleared');
+        } catch (e) {
+          console.error('Error clearing backend cache:', e);
+        }
+        
+        alert('✅ All persisted data cleared!');
+        console.log('✅ All state cleared');
+      } catch (e) {
+        console.error('Error clearing state:', e);
+        alert('Failed to clear state');
+      }
+    }
+  };
 
   // Note: City data is fetched after document upload in handleFileUpload
   // We don't fetch on mount to avoid unnecessary API calls
@@ -391,6 +490,15 @@ export function SimulationsPage() {
     }
     
     try {
+      // Reset simulation state
+      setSimulationStream([]);
+      setCurrentPhase('');
+      setSimulationProgress(0);
+      setSimulationMetrics(null);
+      setSimulationSummary('');
+      setShowSimulationModal(true);
+      setRunningSimulation('running');
+
       // Create simulation record
       const simulation = await simulationsService.create({
         city,
@@ -405,15 +513,114 @@ export function SimulationsPage() {
         }
       });
       
-      setRunningSimulation(simulation.id);
-      setSimulationResults(null);
+      // Start streaming simulation
+      console.log('🎬 Starting simulation stream...');
       
-      // TODO: When backend is ready, this will trigger actual simulation
-      // For now, we'll simulate it with WebSocket messages
-      alert('✅ Simulation started! Watch the map for live updates!');
+      const response = await fetch('/api?endpoint=orchestrate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'run_simulation',
+          simulation_type: simulationFocus,
+          granularity: perspectiveMode,
+          time_horizon: 10
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to start simulation');
+      }
+
+      // Check if response is streaming
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('text/event-stream')) {
+        // Not a stream, try to parse as JSON
+        const data = await response.json();
+        console.error('Expected stream but got JSON:', data);
+        throw new Error(data.message || 'Failed to start simulation stream');
+      }
+
+      // Read streaming response
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+
+      if (!reader) {
+        throw new Error('No reader available');
+      }
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) {
+            console.log('✅ Stream completed');
+            break;
+          }
+
+          if (!value) continue;
+
+          const chunk = decoder.decode(value, { stream: true });
+          const lines = chunk.split('\n');
+
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            
+            if (line.startsWith('data: ')) {
+              try {
+                const jsonStr = line.slice(6).trim();
+                if (!jsonStr) continue;
+                
+                const data = JSON.parse(jsonStr);
+                console.log('📊 Simulation update:', data);
+
+                // Update state based on update type
+                if (data.type === 'simulation_start') {
+                  setCurrentPhase('Initialization');
+                  setSimulationMetrics(data.metrics);
+                } else if (data.type === 'phase_start') {
+                  setCurrentPhase(data.phase);
+                } else if (data.type === 'agent_activity') {
+                  setSimulationStream(prev => [...prev, data]);
+                  setCurrentPhase(data.phase);
+                  setSimulationProgress(data.progress || 0);
+                  if (data.metrics) {
+                    setSimulationMetrics(data.metrics);
+                  }
+                } else if (data.type === 'phase_complete') {
+                  setSimulationProgress(data.progress || 0);
+                  if (data.metrics) {
+                    setSimulationMetrics(data.metrics);
+                  }
+                } else if (data.type === 'simulation_complete') {
+                  setSimulationProgress(100);
+                  setSimulationSummary(data.summary || '');
+                  setSimulationMetrics(data.final_metrics);
+                  setRunningSimulation(null);
+                } else if (data.type === 'error') {
+                  console.error('Simulation error:', data.message);
+                  alert(`Simulation error: ${data.message}`);
+                  setRunningSimulation(null);
+                  setShowSimulationModal(false);
+                  break;
+                }
+              } catch (e) {
+                console.error('Error parsing simulation data:', e, 'Line:', line);
+              }
+            }
+          }
+        }
+      } catch (streamError) {
+        console.error('Stream reading error:', streamError);
+        // Don't throw - just log and let the stream complete naturally
+      } finally {
+        reader.releaseLock();
+      }
     } catch (error) {
       console.error('Error starting simulation:', error);
       alert('Failed to start simulation');
+      setRunningSimulation(null);
+      setShowSimulationModal(false);
     }
   };
 
@@ -504,6 +711,16 @@ export function SimulationsPage() {
                 <Zap className="w-5 h-5 text-white" />
                 <span className="text-white font-semibold text-sm">Create Agents</span>
               </Link>
+
+              {/* Clear Data Button */}
+              <button
+                onClick={clearPersistedState}
+                className="bg-red-600/20 hover:bg-red-600/30 border border-red-500/30 hover:border-red-500/50 text-red-400 hover:text-red-300 px-4 py-2 rounded-xl flex items-center gap-2 transition text-sm font-medium"
+                title="Clear all persisted data"
+              >
+                <Trash2 className="w-4 h-4" />
+                Clear Data
+              </button>
 
               <label className="group relative cursor-pointer">
                 <div className="relative bg-gradient-to-r from-orange-700 to-yellow-700 border border-orange-500/50 rounded-xl px-6 py-3 hover:from-orange-600 hover:to-yellow-600 transition flex items-center gap-3">
@@ -756,6 +973,135 @@ export function SimulationsPage() {
                   </button>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Simulation Stream Modal - Center Screen */}
+      {showSimulationModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-md">
+          <div className="relative w-[90vw] max-w-[900px] h-[85vh] bg-gradient-to-br from-neutral-900/95 to-neutral-800/95 backdrop-blur-xl border-2 border-purple-500/30 rounded-3xl shadow-2xl flex flex-col overflow-hidden">
+            {/* Header */}
+            <div className="px-8 py-6 bg-gradient-to-r from-purple-600/30 to-pink-600/30 border-b border-white/20 flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="relative">
+                  <div className="w-4 h-4 bg-green-400 rounded-full animate-pulse"></div>
+                  <div className="absolute inset-0 w-4 h-4 bg-green-400 rounded-full animate-ping opacity-75"></div>
+                </div>
+                <div>
+                  <h2 className="text-white font-bold text-2xl">🎬 Live Simulation</h2>
+                  <p className="text-white/60 text-sm">{simulationFocus} • {perspectiveMode} Level</p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setShowSimulationModal(false);
+                  setRunningSimulation(null);
+                }}
+                className="text-white/60 hover:text-white transition p-2 hover:bg-white/10 rounded-lg"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            {/* Progress Bar */}
+            <div className="px-8 py-4 bg-neutral-900/50 border-b border-white/10">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-white/70 text-sm font-medium">{currentPhase || 'Initializing...'}</span>
+                <span className="text-purple-400 text-sm font-bold">{Math.round(simulationProgress)}%</span>
+              </div>
+              <div className="w-full h-2 bg-neutral-800 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-gradient-to-r from-purple-600 to-pink-600 transition-all duration-300"
+                  style={{ width: `${simulationProgress}%` }}
+                ></div>
+              </div>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto p-8">
+              <div className="grid grid-cols-2 gap-6 mb-6">
+                {/* Metrics Cards */}
+                {simulationMetrics && (
+                  <>
+                    <div className="bg-neutral-800/50 border border-purple-500/20 rounded-xl p-4">
+                      <div className="text-white/60 text-xs mb-1">Population</div>
+                      <div className="text-white text-2xl font-bold">{simulationMetrics.population?.toLocaleString() || 'N/A'}</div>
+                    </div>
+                    <div className="bg-neutral-800/50 border border-purple-500/20 rounded-xl p-4">
+                      <div className="text-white/60 text-xs mb-1">Housing Units</div>
+                      <div className="text-white text-2xl font-bold">{simulationMetrics.housing_units?.toLocaleString() || 'N/A'}</div>
+                    </div>
+                    <div className="bg-neutral-800/50 border border-purple-500/20 rounded-xl p-4">
+                      <div className="text-white/60 text-xs mb-1">Traffic Congestion</div>
+                      <div className="text-white text-2xl font-bold">{simulationMetrics.traffic_congestion?.toFixed(1) || 'N/A'}%</div>
+                    </div>
+                    <div className="bg-neutral-800/50 border border-purple-500/20 rounded-xl p-4">
+                      <div className="text-white/60 text-xs mb-1">GDP Growth</div>
+                      <div className="text-white text-2xl font-bold">{simulationMetrics.gdp_growth?.toFixed(2) || 'N/A'}%</div>
+                    </div>
+                    <div className="bg-neutral-800/50 border border-purple-500/20 rounded-xl p-4">
+                      <div className="text-white/60 text-xs mb-1">Affordability Index</div>
+                      <div className="text-white text-2xl font-bold">{simulationMetrics.affordability_index?.toFixed(0) || 'N/A'}/100</div>
+                    </div>
+                    <div className="bg-neutral-800/50 border border-purple-500/20 rounded-xl p-4">
+                      <div className="text-white/60 text-xs mb-1">Public Satisfaction</div>
+                      <div className="text-white text-2xl font-bold">{simulationMetrics.public_satisfaction?.toFixed(0) || 'N/A'}/100</div>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {/* Activity Stream */}
+              <div className="mt-6">
+                <h3 className="text-white font-bold text-lg mb-4">📊 Activity Stream</h3>
+                <div className="space-y-3 max-h-[300px] overflow-y-auto">
+                  {simulationStream.length === 0 ? (
+                    <div className="text-white/60 text-center py-8">
+                      <div className="animate-spin w-6 h-6 border-2 border-purple-500 border-t-transparent rounded-full mx-auto mb-2"></div>
+                      <div>Waiting for simulation updates...</div>
+                    </div>
+                  ) : (
+                    simulationStream.map((update, index) => (
+                      <div
+                        key={index}
+                        className="bg-neutral-800/50 border border-white/10 rounded-xl p-4 hover:bg-neutral-800/70 transition"
+                      >
+                        <div className="flex items-start gap-3">
+                          <div
+                            className="w-10 h-10 rounded-full flex items-center justify-center text-xl flex-shrink-0"
+                            style={{ backgroundColor: `${update.agent_color || '#3b82f6'}20` }}
+                          >
+                            {update.agent_icon || '🤖'}
+                          </div>
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="text-white font-semibold text-sm">{update.agent || 'Agent'}</span>
+                              <span className="text-white/40 text-xs">•</span>
+                              <span className="text-white/60 text-xs">{update.phase || 'Phase'}</span>
+                            </div>
+                            <div className="text-white/80 text-sm">{update.activity || update.message}</div>
+                            {update.step && (
+                              <div className="text-white/40 text-xs mt-1">
+                                Step {update.step} of {update.total_steps}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              {/* Final Summary */}
+              {simulationSummary && (
+                <div className="mt-6 bg-gradient-to-r from-purple-600/20 to-pink-600/20 border border-purple-500/30 rounded-xl p-6">
+                  <h3 className="text-white font-bold text-lg mb-3">📋 Simulation Summary</h3>
+                  <p className="text-white/90 text-base leading-relaxed">{simulationSummary}</p>
+                </div>
+              )}
             </div>
           </div>
         </div>

@@ -30,6 +30,9 @@ class OrchestrationRequest(BaseModel):
     session_id: str = "default"
     city: str = ""
     stream: bool = False
+    simulation_type: str = "Urban Traffic"
+    granularity: str = "Macro"
+    time_horizon: int = 10
 
 
 @app.get("/")
@@ -165,6 +168,49 @@ async def run_orchestrate(request: OrchestrationRequest = None):
                 agent_type=request.message  # Optional: filter by agent type
             )
             return result
+
+        elif request.action == "run_simulation":
+            # Simulation stream action - streams real-time simulation updates
+            def generate_simulation():
+                try:
+                    print(f"🎬 Starting simulation stream: {request.simulation_type}, {request.granularity}")
+                    result = orchestrate(
+                        action="run_simulation",
+                        simulation_type=request.simulation_type,
+                        granularity=request.granularity,
+                        time_horizon=request.time_horizon
+                    )
+                    
+                    # Check if result is a generator
+                    import types
+                    if isinstance(result, types.GeneratorType):
+                        print("✅ Result is a generator, streaming...")
+                        for chunk in result:
+                            print(f"📊 Yielding chunk: {chunk.get('type', 'unknown')}")
+                            yield f"data: {json.dumps(chunk)}\n\n"
+                    elif hasattr(result, '__iter__') and not isinstance(result, (str, dict, list)):
+                        print("✅ Result is iterable, streaming...")
+                        for chunk in result:
+                            print(f"📊 Yielding chunk: {chunk.get('type', 'unknown')}")
+                            yield f"data: {json.dumps(chunk)}\n\n"
+                    else:
+                        print(f"⚠️ Result is not a generator: {type(result)}, value: {result}")
+                        # If it's not a generator, wrap it
+                        yield f"data: {json.dumps(result)}\n\n"
+                except Exception as e:
+                    print(f"❌ Error in simulation stream: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+
+            return StreamingResponse(
+                generate_simulation(),
+                media_type="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "X-Accel-Buffering": "no",
+                }
+            )
 
         else:
             # Other actions return dict

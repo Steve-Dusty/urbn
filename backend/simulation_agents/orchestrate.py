@@ -32,6 +32,7 @@ from .document_manager import get_parsed_context
 from .city_data_agent import city_data_agent_stream, collect_city_data_sync
 from .policy_analysis_agent import analyze_policy_document_stream, analyze_policy_document_sync
 from .mapbox_agent import generate_map_visualization
+from .simulation_agent import run_simulation_stream
 from .thoughts_stream_agent import (
     get_thoughts_stream,
     emit_thought,
@@ -119,6 +120,10 @@ def supervisor_agent(state: AgentState) -> AgentState:
     elif action == "generate_map":
         next_agent = "mapbox"
         print("🗺️  Routing to: MAPBOX AGENT (generate map visualizations from policy)")
+
+    elif action == "run_simulation":
+        next_agent = "simulation_stream"
+        print("🎬 Routing to: SIMULATION STREAM AGENT (real-time policy impact simulation)")
 
     else:
         # Use LLM to determine intent if action not specified
@@ -244,6 +249,40 @@ def simulation_agent_node(state: AgentState) -> AgentState:
     state["next_agent"] = "end"
 
     print("⚠️  Simulation agent placeholder")
+    print("="*60 + "\n")
+
+    return state
+
+
+def simulation_stream_agent_node(state: AgentState) -> AgentState:
+    """Simulation Stream agent - streams real-time policy impact simulation."""
+    print("\n" + "="*60)
+    print("🎬 SIMULATION STREAM AGENT: Starting real-time simulation")
+    print("="*60 + "\n")
+
+    # Get simulation parameters from metadata
+    metadata = state.get("metadata", {})
+    simulation_type = metadata.get("simulation_type", "Urban Traffic")
+    granularity = metadata.get("granularity", "Macro")
+    time_horizon = metadata.get("time_horizon", 10)
+
+    emit_thought(
+        agent_type=AgentType.SIMULATION,
+        thought_type=ThoughtType.ACTION,
+        message=f"Starting {simulation_type} simulation ({granularity} level)",
+        metadata={"simulation_type": simulation_type, "granularity": granularity}
+    )
+
+    # Return streaming generator - this will be yielded by the backend
+    state["response"] = run_simulation_stream(
+        simulation_type=simulation_type,
+        granularity=granularity,
+        time_horizon=time_horizon
+    )
+    state["messages"].append(f"SimulationStream: Starting {simulation_type} simulation")
+    state["next_agent"] = "end"
+
+    print("✓ Simulation stream initialized")
     print("="*60 + "\n")
 
     return state
@@ -458,7 +497,7 @@ def mapbox_agent_node(state: AgentState) -> AgentState:
     return state
 
 
-def route_next(state: AgentState) -> Literal["parser", "chat", "scraper", "simulation", "debate", "aggregator", "city_data", "policy_analysis", "thoughts_stream", "mapbox", "end"]:
+def route_next(state: AgentState) -> Literal["parser", "chat", "scraper", "simulation", "simulation_stream", "debate", "aggregator", "city_data", "policy_analysis", "thoughts_stream", "mapbox", "end"]:
     """Router function that determines next node based on supervisor decision."""
     next_agent = state.get("next_agent", "end")
     print(f"🔀 ROUTER: Next destination -> {next_agent}")
@@ -477,6 +516,7 @@ def create_workflow() -> StateGraph:
     workflow.add_node("chat", chat_agent_node)
     workflow.add_node("scraper", scraper_agent_node)
     workflow.add_node("simulation", simulation_agent_node)
+    workflow.add_node("simulation_stream", simulation_stream_agent_node)
     workflow.add_node("debate", debate_agent_node)
     workflow.add_node("aggregator", aggregator_agent_node)
     workflow.add_node("city_data", city_data_agent_node)
@@ -496,6 +536,7 @@ def create_workflow() -> StateGraph:
             "chat": "chat",
             "scraper": "scraper",
             "simulate": "simulation",
+            "simulation_stream": "simulation_stream",
             "debate": "debate",
             "aggregator": "aggregator",
             "city_data": "city_data",
@@ -511,6 +552,7 @@ def create_workflow() -> StateGraph:
     workflow.add_edge("chat", END)
     workflow.add_edge("scraper", END)
     workflow.add_edge("simulation", END)
+    workflow.add_edge("simulation_stream", END)
     workflow.add_edge("debate", END)
     workflow.add_edge("aggregator", END)
     workflow.add_edge("city_data", END)
