@@ -493,7 +493,7 @@ def create_circular_impact_zone(
     Args:
         center: [longitude, latitude]
         radius_meters: Radius in meters
-        properties: Custom properties (impact_type, magnitude, color, label)
+        properties: Custom properties (impact_type, magnitude, color, label, explanation, citation)
 
     Returns:
         GeoJSON Feature with Polygon
@@ -510,6 +510,12 @@ def create_circular_impact_zone(
         point_lng = lng + degree_radius * math.cos(angle)
         point_lat = lat + degree_radius * math.sin(angle)
         coordinates.append([point_lng, point_lat])
+
+    # Ensure properties have explanation and citation for transparency
+    if 'explanation' not in properties:
+        properties['explanation'] = f"{properties.get('label', 'Impact zone')} shows the affected area of this policy"
+    if 'citation' not in properties:
+        properties['citation'] = 'Source: Policy document analysis'
 
     return {
         "type": "Feature",
@@ -576,11 +582,17 @@ def create_marker(
     Args:
         coordinates: [longitude, latitude]
         marker_type: "construction", "demolition", "sentiment", etc.
-        properties: Custom properties
+        properties: Custom properties (should include explanation and citation)
 
     Returns:
         GeoJSON Feature (Point)
     """
+    # Ensure properties have explanation and citation for transparency
+    if 'explanation' not in properties:
+        properties['explanation'] = f"{marker_type.title()} marker at this location"
+    if 'citation' not in properties:
+        properties['citation'] = 'Source: Policy document analysis'
+
     return {
         "type": "Feature",
         "geometry": {

@@ -201,6 +201,55 @@ def extract_geographic_data_from_policy(policy_analysis: Dict[str, Any]) -> Dict
         }
 
 
+def extract_policy_citations(policy_analysis: Dict[str, Any]) -> Dict[str, str]:
+    """
+    Extract relevant citations from policy analysis for each indicator type.
+
+    Returns:
+        Dictionary mapping indicator type to citation/explanation text
+    """
+    citations = {}
+
+    # Policy intent - general citation
+    policy_intent = policy_analysis.get("policy_intent", "Policy change")
+
+    # Housing/construction citations
+    if policy_analysis.get("key_metrics", {}).get("housing_units"):
+        housing_units = policy_analysis["key_metrics"]["housing_units"]
+        citations["construction"] = f"Policy plans {housing_units:,} new housing units. Source: {policy_intent}"
+
+    # Zoning changes
+    if policy_analysis.get("zoning_changes"):
+        zoning_text = "; ".join(policy_analysis["zoning_changes"][:2])
+        citations["zoning"] = f"Zoning changes: {zoning_text}. Source: Policy document"
+
+    # Infrastructure projects
+    if policy_analysis.get("infrastructure_projects"):
+        infra_text = "; ".join(policy_analysis["infrastructure_projects"][:2])
+        citations["infrastructure"] = f"Infrastructure projects: {infra_text}. Source: Policy document"
+
+    # Impact predictions
+    if policy_analysis.get("impact_predictions"):
+        impacts = policy_analysis["impact_predictions"]
+        if impacts.get("traffic"):
+            citations["traffic"] = f"Traffic impact: {impacts['traffic']}. Source: Policy analysis"
+        if impacts.get("housing_affordability"):
+            citations["affordability"] = f"Housing impact: {impacts['housing_affordability']}. Source: Policy analysis"
+        if impacts.get("economic"):
+            citations["economic"] = f"Economic impact: {impacts['economic']}. Source: Policy analysis"
+
+    # Timeline
+    timeline = policy_analysis.get("timeline", "Implementation timeline not specified")
+    citations["timeline"] = f"Timeline: {timeline}"
+
+    # Affected areas
+    affected_areas = policy_analysis.get("affected_areas", [])
+    if affected_areas:
+        citations["areas"] = f"Affected areas: {', '.join(affected_areas)}. Source: Policy document"
+
+    return citations
+
+
 def generate_all_map_layers(
     policy_analysis: Dict[str, Any],
     indicators: Dict[str, bool],
@@ -219,6 +268,10 @@ def generate_all_map_layers(
     """
     layers = {}
 
+    # Extract policy citations for transparency
+    citations = extract_policy_citations(policy_analysis)
+    policy_intent = policy_analysis.get("policy_intent", "Policy change")
+
     emit_thought(
         agent_type=AgentType.MAPBOX_AGENT,
         thought_type=ThoughtType.ACTION,
@@ -233,11 +286,22 @@ def generate_all_map_layers(
     # 1. IMPACT ZONES (Always generate for affected areas)
     if indicators.get("impact_zones", True):
         try:
-            layers["impact_zones"] = mapbox_mcp.create_impact_zones_from_locations(
+            # Add citations and explanations to impact zones
+            impact_zones_data = mapbox_mcp.create_impact_zones_from_locations(
                 geocoded_locations,
                 default_radius=800,
                 impact_type="policy_impact"
             )
+            # Enhance each zone with detailed citations and explanations
+            for zone in impact_zones_data["features"]:
+                loc_name = zone["properties"].get("location", "")
+                policy_intent = policy_analysis.get("policy_intent", "Policy change")
+                affected_areas = policy_analysis.get("affected_areas", [])
+                
+                zone["properties"]["explanation"] = f"This impact zone in {loc_name} represents the geographic area directly affected by the policy implementation. The zone encompasses approximately 800 meters radius from the center point, indicating the expected reach of policy changes. Within this zone, residents, businesses, and infrastructure will experience the most significant impacts from the policy. The policy aims to: {policy_intent}. This zone has been identified as a priority area based on the policy document analysis, which highlights {', '.join(affected_areas[:3]) if affected_areas else 'multiple affected areas'} as key locations for policy implementation. The visual representation helps stakeholders understand the spatial extent of policy impacts and plan accordingly."
+                zone["properties"]["citation"] = citations.get("areas", f"Affected areas: {', '.join(affected_areas)}. Source: Policy document analysis")
+                zone["properties"]["timeline"] = citations.get("timeline", "Implementation timeline not specified")
+            layers["impact_zones"] = impact_zones_data
             print(f" Generated impact zones: {len(layers['impact_zones']['features'])} zones")
         except Exception as e:
             print(f" Failed to generate impact zones: {e}")
@@ -248,10 +312,20 @@ def generate_all_map_layers(
             housing_units = policy_analysis.get("key_metrics", {}).get("housing_units", 100)
             units_per_site = max(50, housing_units // len(geocoded_locations)) if geocoded_locations else 100
 
-            layers["construction_markers"] = mapbox_mcp.create_construction_markers(
+            construction_data = mapbox_mcp.create_construction_markers(
                 geocoded_locations,
                 units_per_site=units_per_site
             )
+            # Add detailed citations and explanations to construction markers
+            for marker in construction_data["features"]:
+                loc_name = marker["properties"].get("location", "")
+                units = marker["properties"].get("units", units_per_site)
+                policy_intent = policy_analysis.get("policy_intent", "Policy change")
+                
+                marker["properties"]["explanation"] = f"This construction marker in {loc_name} represents a planned development site for {units} new housing units. This development is part of the broader policy initiative to address housing needs in the region. The site has been identified as a priority location for new construction based on factors such as available land, infrastructure capacity, and community needs. The development will contribute to the overall goal of {policy_intent}. This marker indicates that construction is either planned, approved, or currently underway at this location. The project is expected to provide significant housing opportunities for residents while supporting the policy's objectives of improving housing accessibility and community development. Site-specific details including building design, unit mix, and amenities are determined by local planning requirements and policy guidelines."
+                marker["properties"]["citation"] = citations.get("construction", f"Policy plans {housing_units:,} new housing units. Source: {policy_intent}")
+                marker["properties"]["timeline"] = citations.get("timeline", "Implementation timeline not specified")
+            layers["construction_markers"] = construction_data
             print(f" Generated construction markers: {len(layers['construction_markers']['features'])} sites")
         except Exception as e:
             print(f" Failed to generate construction markers: {e}")
@@ -357,7 +431,10 @@ def generate_all_map_layers(
                         "impact": "increased_affordability",
                         "color": "#22c55e",
                         "opacity": 0.3,
-                        "label": f"Affordability Impact: {loc_name}"
+                        "label": f"Affordability Impact: {loc_name}",
+                        "explanation": f"This zone represents the expected impact on housing affordability in {loc_name}. The policy aims to improve access to affordable housing through various mechanisms outlined in the policy document.",
+                        "citation": citations.get("affordability", f"Housing impact: {policy_analysis.get('impact_predictions', {}).get('housing_affordability', 'Improved affordability expected')}. Source: Policy analysis"),
+                        "timeline": citations.get("timeline", "Implementation timeline not specified")
                     }
                 )
                 affordability_zones.append(zone)
@@ -383,7 +460,10 @@ def generate_all_map_layers(
                         "location": loc_name,
                         "color": "#f59e0b",
                         "opacity": 0.4,
-                        "label": f"Zoning Change: {loc_name}"
+                        "label": f"Zoning Change: {loc_name}",
+                        "explanation": f"This zone indicates proposed or approved zoning changes in {loc_name}. Zoning modifications affect land use regulations, building heights, density, and permitted uses as specified in the policy document.",
+                        "citation": citations.get("zoning", f"Zoning changes: {'; '.join(policy_analysis.get('zoning_changes', [])[:2])}. Source: Policy document"),
+                        "timeline": citations.get("timeline", "Implementation timeline not specified")
                     }
                 )
                 zoning_zones.append(zone)
@@ -409,7 +489,10 @@ def generate_all_map_layers(
                         "location": loc_name,
                         "icon": "engineering",
                         "color": "#3b82f6",
-                        "label": f"Infrastructure Project: {loc_name}"
+                        "label": f"Infrastructure Project: {loc_name}",
+                        "explanation": f"Major infrastructure project planned or underway in {loc_name}. This marker indicates significant public works, transportation improvements, or utility upgrades as part of the policy implementation.",
+                        "citation": citations.get("infrastructure", f"Infrastructure projects: {'; '.join(policy_analysis.get('infrastructure_projects', [])[:2])}. Source: Policy document"),
+                        "timeline": citations.get("timeline", "Implementation timeline not specified")
                     }
                 )
                 project_markers.append(marker)

@@ -189,14 +189,26 @@ export function DynamicSimulationMap({ city, simulationData, messages, simulatio
       if (geometryType === 'Point') {
         // Render as circles or heatmap
         if (layerId.includes('heatmap')) {
-          // Heatmap layer
+          // Heatmap layer - MORE VISIBLE
           map.current!.addLayer({
             id: mapLayerId,
             type: 'heatmap',
             source: sourceId,
             paint: {
-              'heatmap-weight': ['get', 'weight'],
-              'heatmap-intensity': 1,
+              'heatmap-weight': [
+                'interpolate',
+                ['linear'],
+                ['get', 'weight'],
+                0, 0,
+                1, 1
+              ],
+              'heatmap-intensity': [
+                'interpolate',
+                ['linear'],
+                ['zoom'],
+                0, 1,
+                15, 3
+              ],
               'heatmap-color': [
                 'interpolate',
                 ['linear'],
@@ -208,27 +220,34 @@ export function DynamicSimulationMap({ city, simulationData, messages, simulatio
                 0.8, 'rgb(239,138,98)',
                 1, 'rgb(178,24,43)'
               ],
-              'heatmap-radius': 30,
-              'heatmap-opacity': 0.8
+              'heatmap-radius': [
+                'interpolate',
+                ['linear'],
+                ['zoom'],
+                0, 20,
+                15, 50
+              ],
+              'heatmap-opacity': 0.9
             }
           });
         } else {
-          // Point markers
+          // Point markers - MUCH MORE VISIBLE
           map.current!.addLayer({
             id: mapLayerId,
             type: 'circle',
             source: sourceId,
             paint: {
-              'circle-radius': layerId.includes('marker') ? 8 : 6,
+              'circle-radius': layerId.includes('marker') ? 12 : 10,
               'circle-color': [
                 'case',
                 ['has', 'color'],
                 ['get', 'color'],
                 '#3b82f6'  // Default blue
               ],
-              'circle-opacity': 0.8,
-              'circle-stroke-width': 2,
-              'circle-stroke-color': '#ffffff'
+              'circle-opacity': 0.95,
+              'circle-stroke-width': 3,
+              'circle-stroke-color': '#ffffff',
+              'circle-blur': 0.15
             }
           });
 
@@ -253,7 +272,7 @@ export function DynamicSimulationMap({ city, simulationData, messages, simulatio
           }
         }
       } else if (geometryType === 'Polygon') {
-        // Render as fill
+        // Render as fill - MORE VISIBLE
         map.current!.addLayer({
           id: mapLayerId,
           type: 'fill',
@@ -269,12 +288,13 @@ export function DynamicSimulationMap({ city, simulationData, messages, simulatio
               'case',
               ['has', 'opacity'],
               ['get', 'opacity'],
-              0.3  // Default opacity
-            ]
+              0.5  // Increased default opacity
+            ],
+            'fill-outline-color': '#ffffff'
           }
         });
 
-        // Add outline
+        // Add outline - THICKER AND MORE VISIBLE
         map.current!.addLayer({
           id: `${mapLayerId}-outline`,
           type: 'line',
@@ -286,8 +306,9 @@ export function DynamicSimulationMap({ city, simulationData, messages, simulatio
               ['get', 'color'],
               '#3b82f6'
             ],
-            'line-width': 2,
-            'line-opacity': 0.8
+            'line-width': 3,
+            'line-opacity': 1,
+            'line-blur': 0.5
           }
         });
 
@@ -310,7 +331,7 @@ export function DynamicSimulationMap({ city, simulationData, messages, simulatio
           });
         }
       } else if (geometryType === 'LineString') {
-        // Render as line
+        // Render as line - MORE VISIBLE
         map.current!.addLayer({
           id: mapLayerId,
           type: 'line',
@@ -322,16 +343,238 @@ export function DynamicSimulationMap({ city, simulationData, messages, simulatio
               ['get', 'color'],
               '#3b82f6'  // Default blue
             ],
-            'line-width': 3,
-            'line-opacity': 0.8
+            'line-width': 5,
+            'line-opacity': 0.9,
+            'line-blur': 1
           }
         });
+
+        // Add glow effect for roads
+        if (layerId.includes('road') || layerId.includes('route')) {
+          map.current!.addLayer({
+            id: `${mapLayerId}-glow`,
+            type: 'line',
+            source: sourceId,
+            paint: {
+              'line-color': [
+                'case',
+                ['has', 'color'],
+                ['get', 'color'],
+                '#3b82f6'
+              ],
+              'line-width': 8,
+              'line-opacity': 0.3,
+              'line-blur': 4
+            }
+          });
+        }
       }
 
       console.log(`✓ Added layer: ${layerId} (${layerData.features.length} features)`);
     });
 
     console.log(`✅ Rendered ${Object.keys(mapVisualization.layers).length} layers on map`);
+
+    // AUTO-OPEN SMALL DARK POPUPS ON EVERY MARKER/ZONE
+    const autoOpenPopups = () => {
+      let delay = 500; // Start after 500ms
+
+      Object.entries(mapVisualization.layers).forEach(([layerId, layerData]: [string, any]) => {
+        if (!layerData?.features) return;
+
+        // Only auto-open for zones and markers (not heatmaps or roads)
+        const isZoneOrMarker = layerId.includes('zone') || 
+                               layerId.includes('marker') || 
+                               layerId.includes('impact') || 
+                               layerId.includes('affordability') || 
+                               layerId.includes('zoning') ||
+                               layerId.includes('construction') ||
+                               layerId.includes('infrastructure');
+
+        if (!isZoneOrMarker) return;
+
+        layerData.features.forEach((feature: any, index: number) => {
+          const props = feature.properties;
+          if (!props.explanation && !props.citation) return; // Skip if no data
+
+          // Calculate center point for polygon zones
+          let coordinates: [number, number];
+          if (feature.geometry.type === 'Polygon') {
+            // Get centroid of polygon
+            const coords = feature.geometry.coordinates[0];
+            const lngs = coords.map((c: number[]) => c[0]);
+            const lats = coords.map((c: number[]) => c[1]);
+            coordinates = [
+              lngs.reduce((a: number, b: number) => a + b, 0) / lngs.length,
+              lats.reduce((a: number, b: number) => a + b, 0) / lats.length
+            ];
+          } else if (feature.geometry.type === 'Point') {
+            coordinates = feature.geometry.coordinates as [number, number];
+          } else {
+            return; // Skip non-polygon/non-point features
+          }
+
+          // Build LARGE DETAILED DARK popup HTML with extensive explanation
+          const popupHTML = `
+            <div style="padding: 24px; min-width: 450px; max-width: 550px; font-family: system-ui, -apple-system, sans-serif; background: linear-gradient(135deg, #1a1a1a 0%, #0f0f0f 100%); border: 2px solid #3b82f6; border-radius: 16px; box-shadow: 0 8px 32px rgba(0,0,0,0.8), 0 0 0 1px rgba(59,130,246,0.3);">
+              <h3 style="margin: 0 0 20px 0; font-size: 22px; font-weight: 800; color: #fff; border-bottom: 3px solid #3b82f6; padding-bottom: 12px; letter-spacing: -0.5px;">
+                ${props.label || props.location || 'Policy Indicator'}
+              </h3>
+              ${props.explanation ? `
+                <div style="margin: 20px 0; padding: 20px; background: linear-gradient(135deg, #252525 0%, #1f1f1f 100%); border-left: 5px solid #3b82f6; border-radius: 12px; box-shadow: inset 0 2px 8px rgba(0,0,0,0.3);">
+                  <div style="font-size: 12px; font-weight: 700; color: #3b82f6; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px; display: flex; align-items: center; gap: 8px;">
+                    <span style="font-size: 16px;">📝</span> DETAILED EXPLANATION
+                  </div>
+                  <p style="margin: 0; font-size: 15px; color: #e5e7eb; line-height: 1.8; font-weight: 400;">
+                    ${props.explanation}
+                  </p>
+                </div>
+              ` : ''}
+              ${props.citation ? `
+                <div style="margin: 20px 0; padding: 20px; background: linear-gradient(135deg, #252525 0%, #1f1f1f 100%); border-left: 5px solid #2563eb; border-radius: 12px; box-shadow: inset 0 2px 8px rgba(0,0,0,0.3);">
+                  <div style="font-size: 12px; font-weight: 700; color: #60a5fa; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px; display: flex; align-items: center; gap: 8px;">
+                    <span style="font-size: 16px;">📚</span> POLICY DOCUMENT CITATION
+                  </div>
+                  <div style="font-size: 14px; color: #d1d5db; line-height: 1.7; font-weight: 400;">
+                    ${props.citation}
+                  </div>
+                </div>
+              ` : ''}
+              ${props.timeline ? `
+                <div style="margin: 20px 0; padding: 18px; background: linear-gradient(135deg, #252525 0%, #1f1f1f 100%); border-left: 5px solid #f59e0b; border-radius: 12px; box-shadow: inset 0 2px 8px rgba(0,0,0,0.3);">
+                  <div style="font-size: 12px; font-weight: 700; color: #fbbf24; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1px; display: flex; align-items: center; gap: 8px;">
+                    <span style="font-size: 16px;">⏱️</span> IMPLEMENTATION TIMELINE
+                  </div>
+                  <div style="font-size: 15px; color: #fde68a; font-weight: 600; line-height: 1.6;">${props.timeline}</div>
+                </div>
+              ` : ''}
+              ${props.units ? `
+                <div style="margin: 20px 0; padding: 18px; background: linear-gradient(135deg, #252525 0%, #1f1f1f 100%); border-left: 5px solid #10b981; border-radius: 12px; box-shadow: inset 0 2px 8px rgba(0,0,0,0.3);">
+                  <div style="font-size: 12px; font-weight: 700; color: #34d399; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1px; display: flex; align-items: center; gap: 8px;">
+                    <span style="font-size: 16px;">🏗️</span> HOUSING UNITS
+                  </div>
+                  <div style="font-size: 24px; font-weight: 800; color: #10b981; letter-spacing: -0.5px;">${props.units}</div>
+                </div>
+              ` : ''}
+              ${props.location ? `
+                <div style="margin-top: 20px; padding-top: 16px; border-top: 1px solid #333; font-size: 12px; color: #9ca3af; text-align: center;">
+                  Location: <span style="color: #d1d5db; font-weight: 600;">${props.location}</span>
+                </div>
+              ` : ''}
+            </div>
+          `;
+
+          // Create and auto-open LARGE popup with staggered timing
+          setTimeout(() => {
+            new mapboxgl.Popup({
+              closeButton: true,
+              closeOnClick: false,
+              maxWidth: '600px',
+              className: 'auto-popup-dark-large',
+              anchor: 'bottom',
+              offset: [0, -10]
+            })
+              .setLngLat(coordinates)
+              .setHTML(popupHTML)
+              .addTo(map.current!);
+          }, delay);
+
+          delay += 300; // Stagger each popup by 300ms (faster)
+        });
+      });
+    };
+
+    // Auto-open popups after a short delay
+    setTimeout(autoOpenPopups, 800);
+
+    // ADD CLICK HANDLERS FOR POPUPS with explanations and citations
+    Object.keys(mapVisualization.layers).forEach(layerId => {
+      const mapLayerId = `backend-${layerId}`;
+
+      // Add click handler for this layer
+      map.current!.on('click', mapLayerId, (e: any) => {
+        if (!e.features || e.features.length === 0) return;
+
+        const feature = e.features[0];
+        const props = feature.properties;
+
+        // Build LARGE DETAILED DARK popup HTML with extensive explanation
+        const popupHTML = `
+          <div style="padding: 24px; min-width: 450px; max-width: 550px; font-family: system-ui, -apple-system, sans-serif; background: linear-gradient(135deg, #1a1a1a 0%, #0f0f0f 100%); border: 2px solid #3b82f6; border-radius: 16px; box-shadow: 0 8px 32px rgba(0,0,0,0.8), 0 0 0 1px rgba(59,130,246,0.3);">
+            <h3 style="margin: 0 0 20px 0; font-size: 22px; font-weight: 800; color: #fff; border-bottom: 3px solid #3b82f6; padding-bottom: 12px; letter-spacing: -0.5px;">
+              ${props.label || props.location || 'Policy Indicator'}
+            </h3>
+            ${props.explanation ? `
+              <div style="margin: 20px 0; padding: 20px; background: linear-gradient(135deg, #252525 0%, #1f1f1f 100%); border-left: 5px solid #3b82f6; border-radius: 12px; box-shadow: inset 0 2px 8px rgba(0,0,0,0.3);">
+                <div style="font-size: 12px; font-weight: 700; color: #3b82f6; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px; display: flex; align-items: center; gap: 8px;">
+                  <span style="font-size: 16px;">📝</span> DETAILED EXPLANATION
+                </div>
+                <p style="margin: 0; font-size: 15px; color: #e5e7eb; line-height: 1.8; font-weight: 400;">
+                  ${props.explanation}
+                </p>
+              </div>
+            ` : ''}
+            ${props.citation ? `
+              <div style="margin: 20px 0; padding: 20px; background: linear-gradient(135deg, #252525 0%, #1f1f1f 100%); border-left: 5px solid #2563eb; border-radius: 12px; box-shadow: inset 0 2px 8px rgba(0,0,0,0.3);">
+                <div style="font-size: 12px; font-weight: 700; color: #60a5fa; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px; display: flex; align-items: center; gap: 8px;">
+                  <span style="font-size: 16px;">📚</span> POLICY DOCUMENT CITATION
+                </div>
+                <div style="font-size: 14px; color: #d1d5db; line-height: 1.7; font-weight: 400;">
+                  ${props.citation}
+                </div>
+              </div>
+            ` : ''}
+            ${props.timeline ? `
+              <div style="margin: 20px 0; padding: 18px; background: linear-gradient(135deg, #252525 0%, #1f1f1f 100%); border-left: 5px solid #f59e0b; border-radius: 12px; box-shadow: inset 0 2px 8px rgba(0,0,0,0.3);">
+                <div style="font-size: 12px; font-weight: 700; color: #fbbf24; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1px; display: flex; align-items: center; gap: 8px;">
+                  <span style="font-size: 16px;">⏱️</span> IMPLEMENTATION TIMELINE
+                </div>
+                <div style="font-size: 15px; color: #fde68a; font-weight: 600; line-height: 1.6;">${props.timeline}</div>
+              </div>
+            ` : ''}
+            ${props.units ? `
+              <div style="margin: 20px 0; padding: 18px; background: linear-gradient(135deg, #252525 0%, #1f1f1f 100%); border-left: 5px solid #10b981; border-radius: 12px; box-shadow: inset 0 2px 8px rgba(0,0,0,0.3);">
+                <div style="font-size: 12px; font-weight: 700; color: #34d399; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1px; display: flex; align-items: center; gap: 8px;">
+                  <span style="font-size: 16px;">🏗️</span> HOUSING UNITS
+                </div>
+                <div style="font-size: 24px; font-weight: 800; color: #10b981; letter-spacing: -0.5px;">${props.units}</div>
+              </div>
+            ` : ''}
+            ${props.location ? `
+              <div style="margin-top: 20px; padding-top: 16px; border-top: 1px solid #333; font-size: 12px; color: #9ca3af; text-align: center;">
+                Location: <span style="color: #d1d5db; font-weight: 600;">${props.location}</span>
+              </div>
+            ` : ''}
+          </div>
+        `;
+
+        // Create and display LARGE DARK popup
+        new mapboxgl.Popup({
+          closeButton: true,
+          closeOnClick: true,
+          maxWidth: '600px',
+          className: 'click-popup-dark-large',
+          anchor: 'bottom',
+          offset: [0, -10]
+        })
+          .setLngLat(e.lngLat)
+          .setHTML(popupHTML)
+          .addTo(map.current!);
+      });
+
+      // Change cursor on hover
+      map.current!.on('mouseenter', mapLayerId, () => {
+        if (map.current) {
+          map.current.getCanvas().style.cursor = 'pointer';
+        }
+      });
+
+      map.current!.on('mouseleave', mapLayerId, () => {
+        if (map.current) {
+          map.current.getCanvas().style.cursor = '';
+        }
+      });
+    });
   }, [mapVisualization, mapLoaded]);
 
   // DYNAMIC SIMULATION EFFECTS
