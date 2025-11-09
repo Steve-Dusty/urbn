@@ -14,6 +14,13 @@ export function SimulationsPage() {
   const [cityData, setCityData] = useState<any>(null);
   const [loadingCityData, setLoadingCityData] = useState(false);
 
+  // Policy Analysis State - fetched from policy_analysis agent
+  const [policyAnalysis, setPolicyAnalysis] = useState<any>(null);
+  const [loadingPolicyAnalysis, setLoadingPolicyAnalysis] = useState(false);
+
+  // Agent Thoughts Stream State
+  const [agentThoughts, setAgentThoughts] = useState<any[]>([]);
+
   // Left Modal State
   const [simulationFocus, setSimulationFocus] = useState('Urban Traffic');
   const [perspectiveMode, setPerspectiveMode] = useState<'Macro' | 'Micro'>('Macro');
@@ -65,16 +72,85 @@ export function SimulationsPage() {
       console.log('📦 Raw data:', data.raw_data);
       setCityData(data);
 
-      // DO NOT auto-populate city search bar - user wants to keep it as is
-      // if (data.city && data.city !== targetCity) {
-      //   setCity(`${data.city}, CA`);
-      // }
+      // Populate city search bar with extracted city name
+      if (data.city && !city) {
+        setCity(data.city);
+      }
     } catch (error) {
       console.error('❌ Error fetching city data:', error);
     } finally {
       setLoadingCityData(false);
     }
   };
+
+  const fetchPolicyAnalysis = async (fileName?: string) => {
+    setLoadingPolicyAnalysis(true);
+    try {
+      console.log('📄 Fetching policy analysis...');
+
+      const response = await fetch('/api?endpoint=orchestrate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'policy_analysis',
+          message: fileName || uploadedPolicyDoc?.name || '',
+          stream: false
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch policy analysis');
+      }
+
+      const data = await response.json();
+      console.log('✅ Policy analysis received:', data);
+      setPolicyAnalysis(data);
+    } catch (error) {
+      console.error('❌ Error fetching policy analysis:', error);
+    } finally {
+      setLoadingPolicyAnalysis(false);
+    }
+  };
+
+  const fetchThoughtsStream = async () => {
+    try {
+      const response = await fetch('/api?endpoint=orchestrate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'thoughts_stream',
+          message: '',  // No agent filter
+          stream: false
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch thoughts stream');
+      }
+
+      const data = await response.json();
+      if (data.status === 'success' && data.thoughts) {
+        setAgentThoughts(data.thoughts);
+      }
+    } catch (error) {
+      console.error('❌ Error fetching thoughts stream:', error);
+    }
+  };
+
+  // Poll thoughts stream every 3 seconds
+  useEffect(() => {
+    // Fetch immediately on mount
+    fetchThoughtsStream();
+
+    // Set up polling
+    const interval = setInterval(fetchThoughtsStream, 3000);
+
+    return () => clearInterval(interval);
+  }, []);
 
   // Get metric value - NO REGEX, just use numbers directly
   const getMetricValue = (metric: string): string => {
@@ -89,9 +165,19 @@ export function SimulationsPage() {
     } else if (metric === 'housing' && numbers.housing_number) {
       return `${Math.round(numbers.housing_number / 1000)}K`;
     } else if (metric === 'traffic' && numbers.traffic_percentage) {
-      return `${Math.round(numbers.traffic_percentage)}%`;
+      // Return descriptive text based on congestion percentage
+      const traffic = numbers.traffic_percentage;
+      if (traffic <= 20) {
+        return 'Low';
+      } else if (traffic <= 40) {
+        return 'Moderate';
+      } else if (traffic <= 60) {
+        return 'High';
+      } else {
+        return 'Severe';
+      }
     } else if (metric === 'gdp' && numbers.gdp_percentage) {
-      return `${numbers.gdp_percentage}%`;
+      return `${numbers.gdp_percentage.toFixed(2)}%`;
     }
 
     return 'N/A';
@@ -299,8 +385,9 @@ export function SimulationsPage() {
         alert(`✅ Policy document uploaded: ${file.name}`);
 
         // Fetch city data after upload (document will be parsed and city extracted)
-        console.log('📄 Document uploaded, fetching city data...');
+        console.log('📄 Document uploaded, fetching city data and policy analysis...');
         await fetchCityData(); // This will extract city from the uploaded document
+        await fetchPolicyAnalysis(file.name); // Analyze the policy document
       } catch (error) {
         console.error('Error uploading file:', error);
         alert('Failed to upload file');
@@ -308,25 +395,7 @@ export function SimulationsPage() {
     }
   };
 
-  // Get simulation messages for right modal
-  const simMessages = runningSimulation 
-    ? messages.filter((m) => m.channel === `simulation:${runningSimulation}`)
-    : [];
-
-  // Mock agent messages for demo
-  const mockAgentMessages = [
-    { data: { agent: 'SimulationAgent', message: 'Analyzing housing density in Mission District...' } },
-    { data: { agent: 'SimulationAgent', message: 'District X density ↑ 4%' } },
-    { data: { agent: 'DebateAgent', message: 'Positive: Increased housing supply reduces rent pressure' } },
-    { data: { agent: 'DebateAgent', message: 'Negative: Potential displacement of existing residents' } },
-    { data: { agent: 'AggregatorAgent', message: 'Compiling draft report with pros/cons analysis...' } },
-    { data: { agent: 'ConsultingAgent', message: 'Recommendation: Phased rollout over 18 months' } },
-    { data: { agent: 'SimulationAgent', message: 'Traffic flow improved by 8% in target zones' } },
-    { data: { agent: 'AggregatorAgent', message: 'Report generated: 5 key findings identified' } }
-  ];
-
-  // Use mock messages if no real messages exist
-  const displayMessages = simMessages.length > 0 ? simMessages : (runningSimulation ? mockAgentMessages : []);
+  // Removed old message handling code - now using agentThoughts from API
 
   return (
     <div className="relative h-screen bg-black overflow-hidden">
@@ -668,50 +737,94 @@ export function SimulationsPage() {
 
             {/* Content */}
             <div className="flex-1 overflow-y-auto p-8 space-y-6">
-              {uploadedPolicyDoc ? (
+              {loadingPolicyAnalysis ? (
+                <div className="text-white/60 text-center py-12">
+                  <div className="animate-spin w-8 h-8 border-4 border-purple-500 border-t-transparent rounded-full mx-auto mb-4"></div>
+                  <div>Analyzing policy document...</div>
+                </div>
+              ) : policyAnalysis?.status === 'success' && policyAnalysis?.analysis ? (
                 <>
                   <div>
                     <h3 className="text-white/70 text-sm font-semibold mb-2">Document</h3>
-                    <div className="text-white text-xl font-bold">{uploadedPolicyDoc.name}</div>
+                    <div className="text-white text-xl font-bold">{policyAnalysis.file_name || uploadedPolicyDoc?.name}</div>
                   </div>
 
-                  <div>
-                    <h3 className="text-white/70 text-sm font-semibold mb-2">Focus Area</h3>
-                    <div className="text-white/90 text-base">
-                      {simulationFocus === 'Urban Traffic' && 'Traffic infrastructure improvements and congestion reduction'}
-                      {simulationFocus === 'Infrastructure' && 'Public infrastructure development and maintenance'}
-                      {simulationFocus === 'Housing' && 'Affordable housing development and zoning changes'}
-                      {simulationFocus === 'Environmental Impact' && 'Environmental sustainability and emissions reduction'}
-                      {simulationFocus === 'Zoning' && 'Zoning regulations and land use policies'}
-                    </div>
-                  </div>
-
-                  {simulationResults?.metrics?.changes && (
+                  {policyAnalysis.summary && (
                     <div>
-                      <h3 className="text-white/70 text-sm font-semibold mb-4">Key Metrics Impact</h3>
+                      <h3 className="text-white/70 text-sm font-semibold mb-2">Summary</h3>
+                      <div className="text-white/90 text-base">{policyAnalysis.summary}</div>
+                    </div>
+                  )}
+
+                  {policyAnalysis.analysis.policy_intent && (
+                    <div>
+                      <h3 className="text-white/70 text-sm font-semibold mb-2">Policy Intent</h3>
+                      <div className="text-white/90 text-base">{policyAnalysis.analysis.policy_intent}</div>
+                    </div>
+                  )}
+
+                  {policyAnalysis.analysis.key_metrics && (
+                    <div>
+                      <h3 className="text-white/70 text-sm font-semibold mb-4">Key Metrics</h3>
                       <div className="grid grid-cols-3 gap-4">
-                        <div className="bg-neutral-800/50 rounded-xl p-4 border border-neutral-700">
-                          <div className="text-white/60 text-sm mb-1">Housing Affordability</div>
-                          <div className="text-green-400 text-3xl font-bold">
-                            +{simulationResults.metrics.changes.housingAffordability?.percentage?.toFixed(1) || '0.0'}%
+                        {policyAnalysis.analysis.key_metrics.housing_units && (
+                          <div className="bg-neutral-800/50 rounded-xl p-4 border border-neutral-700">
+                            <div className="text-white/60 text-sm mb-1">Housing Units</div>
+                            <div className="text-green-400 text-3xl font-bold">
+                              {policyAnalysis.analysis.key_metrics.housing_units.toLocaleString()}
+                            </div>
                           </div>
-                        </div>
-                        <div className="bg-neutral-800/50 rounded-xl p-4 border border-neutral-700">
-                          <div className="text-white/60 text-sm mb-1">Traffic Flow</div>
-                          <div className="text-green-400 text-3xl font-bold">
-                            +{simulationResults.metrics.changes.trafficFlow?.percentage?.toFixed(1) || '0.0'}%
+                        )}
+                        {policyAnalysis.analysis.key_metrics.budget && (
+                          <div className="bg-neutral-800/50 rounded-xl p-4 border border-neutral-700">
+                            <div className="text-white/60 text-sm mb-1">Budget</div>
+                            <div className="text-green-400 text-3xl font-bold">
+                              ${(policyAnalysis.analysis.key_metrics.budget / 1000000).toFixed(1)}M
+                            </div>
                           </div>
-                        </div>
-                        <div className="bg-neutral-800/50 rounded-xl p-4 border border-neutral-700">
-                          <div className="text-white/60 text-sm mb-1">Air Quality</div>
-                          <div className="text-green-400 text-3xl font-bold">
-                            +{simulationResults.metrics.changes.airQuality?.percentage?.toFixed(1) || '0.0'}%
+                        )}
+                        {policyAnalysis.analysis.key_metrics.population_impact && (
+                          <div className="bg-neutral-800/50 rounded-xl p-4 border border-neutral-700">
+                            <div className="text-white/60 text-sm mb-1">Population Impact</div>
+                            <div className="text-green-400 text-3xl font-bold">
+                              +{policyAnalysis.analysis.key_metrics.population_impact.toLocaleString()}
+                            </div>
                           </div>
-                        </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {policyAnalysis.analysis.impact_predictions && (
+                    <div>
+                      <h3 className="text-white/70 text-sm font-semibold mb-3">Impact Predictions</h3>
+                      <div className="space-y-2">
+                        {policyAnalysis.analysis.impact_predictions.traffic && (
+                          <div className="bg-neutral-800/30 rounded-lg p-3 border border-neutral-700/50">
+                            <span className="text-orange-400 font-semibold">Traffic:</span>
+                            <span className="text-white/80 ml-2">{policyAnalysis.analysis.impact_predictions.traffic}</span>
+                          </div>
+                        )}
+                        {policyAnalysis.analysis.impact_predictions.housing_affordability && (
+                          <div className="bg-neutral-800/30 rounded-lg p-3 border border-neutral-700/50">
+                            <span className="text-blue-400 font-semibold">Housing:</span>
+                            <span className="text-white/80 ml-2">{policyAnalysis.analysis.impact_predictions.housing_affordability}</span>
+                          </div>
+                        )}
+                        {policyAnalysis.analysis.impact_predictions.economic && (
+                          <div className="bg-neutral-800/30 rounded-lg p-3 border border-neutral-700/50">
+                            <span className="text-green-400 font-semibold">Economic:</span>
+                            <span className="text-white/80 ml-2">{policyAnalysis.analysis.impact_predictions.economic}</span>
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}
                 </>
+              ) : uploadedPolicyDoc ? (
+                <div className="text-white/40 text-center py-12">
+                  Waiting for policy analysis...
+                </div>
               ) : (
                 <div className="text-white/40 text-center py-12">
                   Upload a policy document to see analysis
@@ -727,9 +840,9 @@ export function SimulationsPage() {
           <div className="relative">
             {/* Arrow pointing down */}
             <div className="absolute -bottom-2 left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-8 border-r-8 border-t-8 border-transparent border-t-neutral-900/90"></div>
-            
+
             {/* Popup Container */}
-            <div 
+            <div
               className="bg-neutral-900/90 backdrop-blur-md border border-neutral-700 rounded-2xl shadow-2xl p-4 min-w-[400px] max-w-[600px] max-h-[300px] flex flex-col cursor-pointer transition-all"
               onClick={() => setShowAgentStream(!showAgentStream)}
             >
@@ -740,17 +853,17 @@ export function SimulationsPage() {
                   <h4 className="text-white font-bold text-sm">🤖 Agentic Thoughts Stream</h4>
                 </div>
                 <div className="text-white/60 text-xs">
-                  {displayMessages.length > 0 ? `${displayMessages.length} messages` : 'Waiting for agents...'}
+                  {agentThoughts.length > 0 ? `${agentThoughts.length} thoughts` : 'Waiting for agents...'}
                 </div>
               </div>
 
               {/* Messages */}
               {showAgentStream && (
                 <div className="overflow-y-auto space-y-1 font-mono text-xs max-h-[240px]">
-                  {displayMessages.length > 0 ? (
-                    displayMessages.slice(-20).map((msg, i) => {
-                      const agentName = msg.data.agent || 'System';
-                      const message = msg.data.message || msg.data.token || 'Processing...';
+                  {agentThoughts.length > 0 ? (
+                    agentThoughts.slice(-20).map((thought, i) => {
+                      const agentName = thought.agent || 'System';
+                      const message = thought.message || 'Processing...';
                       return (
                         <div key={i} className="text-green-300 flex items-start gap-2 py-1 px-2 rounded hover:bg-neutral-800/50">
                           <span className="text-green-400 mt-0.5">▶</span>

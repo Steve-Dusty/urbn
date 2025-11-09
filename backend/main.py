@@ -128,6 +128,44 @@ async def run_orchestrate(request: OrchestrationRequest = None):
                 )
                 return result
 
+        elif request.action == "policy_analysis":
+            # Policy analysis action - check if streaming or sync
+            if request.stream:
+                # Streaming mode for real-time updates
+                def generate_policy_analysis():
+                    for chunk in orchestrate(
+                        action="policy_analysis",
+                        file_name=request.message,  # Use message field for file name
+                        stream=True
+                    ):
+                        yield f"data: {json.dumps({'chunk': chunk})}\n\n"
+
+                return StreamingResponse(
+                    generate_policy_analysis(),
+                    media_type="text/event-stream",
+                    headers={
+                        "Cache-Control": "no-cache",
+                        "X-Accel-Buffering": "no",
+                    }
+                )
+            else:
+                # Synchronous mode - return complete result
+                result = orchestrate(
+                    action="policy_analysis",
+                    file_name=request.message,
+                    stream=False
+                )
+                return result
+
+        elif request.action == "thoughts_stream":
+            # Return recent agent thoughts
+            result = orchestrate(
+                action="thoughts_stream",
+                limit=20,  # Get last 20 thoughts
+                agent_type=request.message  # Optional: filter by agent type
+            )
+            return result
+
         else:
             # Other actions return dict
             result = orchestrate(action=request.action)

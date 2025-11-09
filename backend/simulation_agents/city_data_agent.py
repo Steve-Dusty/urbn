@@ -9,6 +9,7 @@ import google.generativeai as genai
 from dotenv import load_dotenv
 import requests
 import json
+from .thoughts_stream_agent import emit_thought, AgentType, ThoughtType
 
 # Load environment variables
 load_dotenv()
@@ -86,7 +87,7 @@ def extract_city_from_parsed_context(document_context: str) -> str:
 
 def collect_city_data(city: str) -> Dict[str, Any]:
     """
-    Collect comprehensive city data using Tavily searches
+    Collect comprehensive city data using Tavily searches + Gemini for structured extraction
 
     Args:
         city: City name to search for
@@ -116,6 +117,12 @@ def collect_city_data(city: str) -> Dict[str, Any]:
     # Collect data for each metric
     for metric, query in queries.items():
         print(f"  → Searching: {metric}...")
+        emit_thought(
+            AgentType.CITY_DATA,
+            ThoughtType.ACTION,
+            f"Searching for {metric.replace('_', ' ')} in {city}...",
+            {"city": city, "metric": metric}
+        )
         result = search_tavily(query, search_depth="advanced")
 
         if "error" not in result and result.get("results"):
@@ -150,6 +157,9 @@ def extract_simple_numbers(raw_data: Dict[str, Any]) -> Dict[str, Any]:
         "gdp_percentage": None
     }
 
+    # Also check the direct metric values (not just raw_sources)
+    # This ensures we extract from both answer field and direct metric field
+
     # Extract from raw sources
     for source in raw_data.get('raw_sources', []):
         metric = source['metric']
@@ -166,22 +176,193 @@ def extract_simple_numbers(raw_data: Dict[str, Any]) -> Dict[str, Any]:
                     result["population_number"] = int(match.group(1).replace(',', ''))
 
         elif metric == 'housing_units':
-            # Look for first number
-            match = re.search(r'(\d{1,3}(?:,\d{3})*)', answer)
-            if match:
-                result["housing_number"] = int(match.group(1).replace(',', ''))
+            # Look for ALL numbers and find the largest (total housing units, not just new permits)
+            # Pattern: look for numbers like "8,782" or "108,036" or "600,000"
+            numbers = re.findall(r'(\d{1,3}(?:,\d{3})+)', answer)
+            if numbers:
+                # Convert to integers and get the largest (likely the total stock)
+                num_values = [int(n.replace(',', '')) for n in numbers]
+                result["housing_number"] = max(num_values)
 
         elif metric == 'traffic_flow':
-            # Look for percentage
+            # Look for percentage first, then try "reduced" or "decreased" indicators
             match = re.search(r'(\d+(?:\.\d+)?)%', answer)
             if match:
                 result["traffic_percentage"] = float(match.group(1))
+            else:
+                # Look for phrases like "reduced traffic" and assign a default congestion level
+                if 'reduced' in answer.lower() or 'decreased' in answer.lower():
+                    result["traffic_percentage"] = 15.0  # Moderate congestion
+                elif 'congestion' in answer.lower():
+                    result["traffic_percentage"] = 35.0  # Higher congestion
 
         elif metric == 'gdp_growth':
-            # Look for percentage
-            match = re.search(r'(\d+(?:\.\d+)?)%', answer)
+            # Look for percentage - prioritize growth rate percentages
+            matches = re.findall(r'(\d+(?:\.\d+)?)%', answer)
+            if matches:
+                # Find the smallest reasonable GDP growth rate (typically 0.5% - 5%)
+                percentages = [float(m) for m in matches]
+                reasonable_growth = [p for p in percentages if 0.1 <= p <= 10.0]
+                if reasonable_growth:
+                    result["gdp_percentage"] = reasonable_growth[0]
+
+    # Fallback: also check direct metric values if raw_sources didn't populate everything
+    if not result["population_number"] and raw_data.get('population'):
+        text = raw_data['population']
+        match = re.search(r'(\d+\.?\d*)\s*million', text, re.I)
+        if match:
+            result["population_number"] = int(float(match.group(1)) * 1000000)
+        else:
+            match = re.search(r'(\d{1,3}(?:,\d{3})+)', text)
             if match:
-                result["gdp_percentage"] = float(match.group(1))
+                result["population_number"] = int(match.group(1).replace(',', ''))
+
+    if not result["housing_number"] and raw_data.get('housing_units'):
+        text = raw_data['housing_units']
+        numbers = re.findall(r'(\d{1,3}(?:,\d{3})+)', text)
+        if numbers:
+            num_values = [int(n.replace(',', '')) for n in numbers]
+            result["housing_number"] = max(num_values)
+
+    if not result["traffic_percentage"] and raw_data.get('traffic_flow'):
+        text = raw_data['traffic_flow']
+        match = re.search(r'(\d+(?:\.\d+)?)%', text)
+        if match:
+            result["traffic_percentage"] = float(match.group(1))
+        else:
+            # Fallback heuristic for traffic without percentages
+            if 'reduced' in text.lower() or 'decreased' in text.lower():
+                result["traffic_percentage"] = 15.0
+            elif 'congestion' in text.lower() or 'heavy' in text.lower():
+                result["traffic_percentage"] = 35.0
+
+    if not result["gdp_percentage"] and raw_data.get('gdp_growth'):
+        text = raw_data['gdp_growth']
+        matches = re.findall(r'(\d+(?:\.\d+)?)%', text)
+        if matches:
+            percentages = [float(m) for m in matches]
+            reasonable_growth = [p for p in percentages if 0.1 <= p <= 10.0]
+            if reasonable_growth:
+                result["gdp_percentage"] = reasonable_growth[0]
+
+    return result
+
+
+def extract_numbers_with_llm(raw_data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Use Gemini with JSON mode to extract ONLY numbers - NO TEXT ALLOWED
+    """
+    model = genai.GenerativeModel(
+        "models/gemini-2.0-flash-exp",
+        generation_config={
+            "response_mime_type": "application/json",
+            "temperature": 0.1
+        }
+    )
+
+    result = {
+        "population_number": None,
+        "housing_number": None,
+        "traffic_percentage": None,
+        "gdp_percentage": None
+    }
+
+    print("\n🤖 Using LLM with JSON mode to extract numbers...")
+
+    # Build a single prompt for ALL metrics at once
+    all_texts = {}
+    for source in raw_data.get('raw_sources', []):
+        metric = source['metric']
+        answer = source.get('answer', '')
+        if answer:
+            all_texts[metric] = answer
+
+    if not all_texts:
+        return result
+
+    try:
+        # Single prompt for all metrics - forces JSON output
+        prompt = f"""You are a data extraction bot. Extract ONLY numbers from the following city data texts.
+
+Return VALID JSON with this EXACT structure:
+{{
+  "population_number": <integer or null>,
+  "housing_number": <integer or null>,
+  "traffic_percentage": <float or null>,
+  "gdp_percentage": <float or null>
+}}
+
+RULES:
+1. population_number: Extract the city population as an integer (e.g., 1409359 for "1.4 million" or "1,409,359")
+2. housing_number: Extract the LARGEST housing number mentioned (total stock, not new units)
+3. traffic_percentage: Extract or estimate congestion % (0-100). If text says "reduced traffic" use 15, "heavy congestion" use 45
+4. gdp_percentage: Extract GDP growth rate (0.1-10.0). If text says "healthy growth" use 2.5, "strong" use 3.0
+
+EXAMPLES:
+Input: {{"population": "San Diego's population in 2025 is 1,409,359"}}
+Output: {{"population_number": 1409359, "housing_number": null, "traffic_percentage": null, "gdp_percentage": null}}
+
+Input: {{"housing_units": "Permitted 8,782 new homes, city aims to approve 108,036 units by 2029"}}
+Output: {{"population_number": null, "housing_number": 108036, "traffic_percentage": null, "gdp_percentage": null}}
+
+Input: {{"traffic_flow": "Traffic patterns show reduced traffic due to COVID-19"}}
+Output: {{"population_number": null, "housing_number": null, "traffic_percentage": 15.0, "gdp_percentage": null}}
+
+Input: {{"gdp_growth": "GDP growth expected to be healthy at 2.3% due to investment"}}
+Output: {{"population_number": null, "housing_number": null, "traffic_percentage": null, "gdp_percentage": 2.3}}
+
+NOW EXTRACT FROM THIS DATA:
+{json.dumps(all_texts, indent=2)}
+
+Return ONLY the JSON object:"""
+
+        response = model.generate_content(prompt)
+        extracted_data = json.loads(response.text)
+
+        # Validate and populate result
+        if extracted_data.get("population_number"):
+            result["population_number"] = int(extracted_data["population_number"])
+            print(f"  ✓ Population: {result['population_number']:,}")
+            emit_thought(
+                AgentType.CITY_DATA,
+                ThoughtType.OBSERVATION,
+                f"Population: {result['population_number']:,}",
+                {"metric": "population", "value": result["population_number"]}
+            )
+
+        if extracted_data.get("housing_number"):
+            result["housing_number"] = int(extracted_data["housing_number"])
+            print(f"  ✓ Housing Units: {result['housing_number']:,}")
+            emit_thought(
+                AgentType.CITY_DATA,
+                ThoughtType.OBSERVATION,
+                f"Housing units: {result['housing_number']:,}",
+                {"metric": "housing", "value": result["housing_number"]}
+            )
+
+        if extracted_data.get("traffic_percentage"):
+            result["traffic_percentage"] = float(extracted_data["traffic_percentage"])
+            print(f"  ✓ Traffic: {result['traffic_percentage']}%")
+            emit_thought(
+                AgentType.CITY_DATA,
+                ThoughtType.OBSERVATION,
+                f"Traffic congestion: {result['traffic_percentage']}%",
+                {"metric": "traffic", "value": result["traffic_percentage"]}
+            )
+
+        if extracted_data.get("gdp_percentage"):
+            result["gdp_percentage"] = float(extracted_data["gdp_percentage"])
+            print(f"  ✓ GDP Growth: {result['gdp_percentage']}%")
+            emit_thought(
+                AgentType.CITY_DATA,
+                ThoughtType.OBSERVATION,
+                f"GDP growth: {result['gdp_percentage']}%",
+                {"metric": "gdp", "value": result["gdp_percentage"]}
+            )
+
+
+    except Exception as e:
+        print(f"  ✗ Failed to extract numbers: {e}")
 
     return result
 
@@ -294,8 +475,8 @@ def collect_city_data_sync(city: str = None, document_context: str = None) -> Di
         # Step 2: Collect data
         raw_data = collect_city_data(city)
 
-        # Step 3: Extract simple numbers
-        simple_numbers = extract_simple_numbers(raw_data)
+        # Step 3: Extract simple numbers using LLM (more reliable than regex)
+        simple_numbers = extract_numbers_with_llm(raw_data)
 
         # Step 4: Synthesize report
         report = synthesize_city_data(raw_data)

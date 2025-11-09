@@ -30,6 +30,14 @@ from .parser_agent import parse_documents
 from .simple_chat_agent import chat_with_documents
 from .document_manager import get_parsed_context
 from .city_data_agent import city_data_agent_stream, collect_city_data_sync
+from .policy_analysis_agent import analyze_policy_document_stream, analyze_policy_document_sync
+from .thoughts_stream_agent import (
+    get_thoughts_stream,
+    emit_thought,
+    AgentType,
+    ThoughtType,
+    ThoughtPatterns
+)
 
 load_dotenv()
 
@@ -99,6 +107,14 @@ def supervisor_agent(state: AgentState) -> AgentState:
         next_agent = "city_data"
         print("🏙️  Routing to: CITY DATA AGENT (collect population, housing, traffic, GDP)")
 
+    elif action == "policy_analysis":
+        next_agent = "policy_analysis"
+        print("📄 Routing to: POLICY ANALYSIS AGENT (extract policy intent and parameters)")
+
+    elif action == "thoughts_stream":
+        next_agent = "thoughts_stream"
+        print("💭 Routing to: THOUGHTS STREAM (get agent reasoning stream)")
+
     else:
         # Use LLM to determine intent if action not specified
         print("🤔 No explicit action - analyzing user intent...")
@@ -115,6 +131,8 @@ Available agents:
 - debate: Multi-agent debate on policy implications
 - aggregator: Compile final reports and recommendations
 - city_data: Collect city statistics (population, housing, traffic, GDP) using Tavily
+- policy_analysis: Analyze policy document intent and extract simulation parameters
+- thoughts_stream: Get live stream of agent reasoning and decisions
 
 Respond with ONLY the agent name, nothing else."""
 
@@ -281,6 +299,12 @@ def city_data_agent_node(state: AgentState) -> AgentState:
     print("🏙️  CITY DATA AGENT: Collecting city statistics")
     print("="*60 + "\n")
 
+    # Emit thought
+    ThoughtPatterns.city_data_searching(
+        state.get("metadata", {}).get("city", "unknown"),
+        "all metrics"
+    )
+
     # Get city from state metadata or extract from document context
     city = state.get("metadata", {}).get("city", None)
 
@@ -300,6 +324,14 @@ def city_data_agent_node(state: AgentState) -> AgentState:
         state["response"] = result
         state["messages"].append(f"CityData: Collected data for {result.get('city', 'unknown')}")
 
+        # Emit thoughts for found data
+        if result.get("status") == "success" and result.get("numbers"):
+            nums = result["numbers"]
+            if nums.get("population_number"):
+                ThoughtPatterns.city_data_found(result["city"], "population", f"{nums['population_number']:,}")
+            if nums.get("housing_number"):
+                ThoughtPatterns.city_data_found(result["city"], "housing", f"{nums['housing_number']:,} units")
+
     state["next_agent"] = "end"
 
     print("✓ City Data agent initialized")
@@ -308,7 +340,81 @@ def city_data_agent_node(state: AgentState) -> AgentState:
     return state
 
 
-def route_next(state: AgentState) -> Literal["parser", "chat", "scraper", "simulation", "debate", "aggregator", "city_data", "end"]:
+def policy_analysis_agent_node(state: AgentState) -> AgentState:
+    """Policy Analysis agent - extracts policy intent and simulation parameters."""
+    print("\n" + "="*60)
+    print("📄 POLICY ANALYSIS AGENT: Analyzing policy document")
+    print("="*60 + "\n")
+
+    # Get file name from metadata if provided
+    file_name = state.get("metadata", {}).get("file_name", None)
+
+    # Emit thought
+    ThoughtPatterns.policy_analyzing(file_name or "policy document")
+
+    # Check if we should stream or return sync
+    stream = state.get("metadata", {}).get("stream", False)
+
+    if stream:
+        # Return streaming generator for real-time updates
+        state["response"] = analyze_policy_document_stream(file_name=file_name)
+        state["messages"].append("PolicyAnalysis: Streaming policy analysis")
+    else:
+        # Return synchronous result
+        result = analyze_policy_document_sync(file_name=file_name)
+        state["response"] = result
+        state["messages"].append(f"PolicyAnalysis: Analyzed {result.get('file_name', 'document')}")
+
+        # Emit thought with policy intent
+        if result.get("status") == "success" and result.get("analysis"):
+            intent = result["analysis"].get("policy_intent", "")
+            if intent:
+                ThoughtPatterns.policy_intent_extracted(intent)
+
+    state["next_agent"] = "end"
+
+    print("✓ Policy Analysis agent completed")
+    print("="*60 + "\n")
+
+    return state
+
+
+def thoughts_stream_agent_node(state: AgentState) -> AgentState:
+    """Thoughts Stream agent - returns recent agent thoughts."""
+    print("\n" + "="*60)
+    print("💭 THOUGHTS STREAM AGENT: Retrieving agent thoughts")
+    print("="*60 + "\n")
+
+    # Get parameters
+    limit = state.get("metadata", {}).get("limit", 20)
+    agent_type = state.get("metadata", {}).get("agent_type", None)
+
+    thoughts_manager = get_thoughts_stream()
+
+    if agent_type:
+        try:
+            agent_enum = AgentType[agent_type.upper()]
+            thoughts = thoughts_manager.get_thoughts_by_agent(agent_enum, limit=limit)
+        except KeyError:
+            thoughts = thoughts_manager.get_recent_thoughts(limit=limit)
+    else:
+        thoughts = thoughts_manager.get_recent_thoughts(limit=limit)
+
+    state["response"] = {
+        "status": "success",
+        "thoughts": thoughts,
+        "count": len(thoughts)
+    }
+    state["messages"].append(f"ThoughtsStream: Retrieved {len(thoughts)} thoughts")
+    state["next_agent"] = "end"
+
+    print(f"✓ Retrieved {len(thoughts)} thoughts")
+    print("="*60 + "\n")
+
+    return state
+
+
+def route_next(state: AgentState) -> Literal["parser", "chat", "scraper", "simulation", "debate", "aggregator", "city_data", "policy_analysis", "thoughts_stream", "end"]:
     """Router function that determines next node based on supervisor decision."""
     next_agent = state.get("next_agent", "end")
     print(f"🔀 ROUTER: Next destination -> {next_agent}")
@@ -330,6 +436,8 @@ def create_workflow() -> StateGraph:
     workflow.add_node("debate", debate_agent_node)
     workflow.add_node("aggregator", aggregator_agent_node)
     workflow.add_node("city_data", city_data_agent_node)
+    workflow.add_node("policy_analysis", policy_analysis_agent_node)
+    workflow.add_node("thoughts_stream", thoughts_stream_agent_node)
 
     # Set entry point
     workflow.set_entry_point("supervisor")
@@ -346,6 +454,8 @@ def create_workflow() -> StateGraph:
             "debate": "debate",
             "aggregator": "aggregator",
             "city_data": "city_data",
+            "policy_analysis": "policy_analysis",
+            "thoughts_stream": "thoughts_stream",
             "end": END
         }
     )
@@ -358,6 +468,8 @@ def create_workflow() -> StateGraph:
     workflow.add_edge("debate", END)
     workflow.add_edge("aggregator", END)
     workflow.add_edge("city_data", END)
+    workflow.add_edge("policy_analysis", END)
+    workflow.add_edge("thoughts_stream", END)
 
     return workflow.compile()
 
