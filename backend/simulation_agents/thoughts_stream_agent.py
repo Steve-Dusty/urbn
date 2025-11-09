@@ -16,6 +16,7 @@ class AgentType(Enum):
     CITY_DATA = "CityDataAgent"
     SIMULATION = "SimulationAgent"
     MAP = "MapAgent"
+    MAPBOX_AGENT = "MapboxAgent"
     CHAT = "ChatAgent"
     PARSER = "ParserAgent"
     DEBATE = "DebateAgent"

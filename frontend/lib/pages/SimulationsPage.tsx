@@ -18,6 +18,10 @@ export function SimulationsPage() {
   const [policyAnalysis, setPolicyAnalysis] = useState<any>(null);
   const [loadingPolicyAnalysis, setLoadingPolicyAnalysis] = useState(false);
 
+  // Map Visualization State - fetched from mapbox agent
+  const [mapVisualization, setMapVisualization] = useState<any>(null);
+  const [loadingMapVisualization, setLoadingMapVisualization] = useState(false);
+
   // Agent Thoughts Stream State
   const [agentThoughts, setAgentThoughts] = useState<any[]>([]);
 
@@ -111,6 +115,44 @@ export function SimulationsPage() {
       console.error('❌ Error fetching policy analysis:', error);
     } finally {
       setLoadingPolicyAnalysis(false);
+    }
+  };
+
+  const fetchMapVisualization = async () => {
+    setLoadingMapVisualization(true);
+    try {
+      console.log('🗺️  Fetching map visualization...');
+
+      const response = await fetch('/api?endpoint=orchestrate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'generate_map',
+          stream: false
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch map visualization');
+      }
+
+      const data = await response.json();
+      console.log('✅ Map visualization received:', data);
+      console.log('🗺️  Layers generated:', Object.keys(data.layers || {}));
+      console.log('📊 Total features:', data.metadata?.total_features);
+
+      setMapVisualization(data);
+
+      // Update city if map has a center
+      if (data.city && !city) {
+        setCity(data.city);
+      }
+    } catch (error) {
+      console.error('❌ Error fetching map visualization:', error);
+    } finally {
+      setLoadingMapVisualization(false);
     }
   };
 
@@ -385,9 +427,10 @@ export function SimulationsPage() {
         alert(`✅ Policy document uploaded: ${file.name}`);
 
         // Fetch city data after upload (document will be parsed and city extracted)
-        console.log('📄 Document uploaded, fetching city data and policy analysis...');
+        console.log('📄 Document uploaded, fetching city data, policy analysis, and map visualization...');
         await fetchCityData(); // This will extract city from the uploaded document
         await fetchPolicyAnalysis(file.name); // Analyze the policy document
+        await fetchMapVisualization(); // Generate map visualization with all indicators
       } catch (error) {
         console.error('Error uploading file:', error);
         alert('Failed to upload file');
@@ -490,6 +533,7 @@ export function SimulationsPage() {
           simulationId={runningSimulation}
           is3D={is3D}
           onToggle3D={() => setIs3D(!is3D)}
+          mapVisualization={mapVisualization}
         />
       </div>
 

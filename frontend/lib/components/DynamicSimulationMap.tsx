@@ -15,9 +15,10 @@ interface DynamicSimulationMapProps {
   onDemolitionComplete?: () => void;
   is3D?: boolean;
   onToggle3D?: () => void;
+  mapVisualization?: any;
 }
 
-export function DynamicSimulationMap({ city, simulationData, messages, simulationId, is3D: externalIs3D, onToggle3D }: DynamicSimulationMapProps) {
+export function DynamicSimulationMap({ city, simulationData, messages, simulationId, is3D: externalIs3D, onToggle3D, mapVisualization }: DynamicSimulationMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
@@ -134,6 +135,204 @@ export function DynamicSimulationMap({ city, simulationData, messages, simulatio
       })
       .catch(console.error);
   }, [city, mapLoaded]);
+
+  // RENDER BACKEND MAP LAYERS from Mapbox Agent
+  useEffect(() => {
+    if (!map.current || !mapLoaded || !mapVisualization?.layers) return;
+
+    console.log('🗺️  Rendering backend map layers:', Object.keys(mapVisualization.layers));
+
+    // Fly to map center
+    if (mapVisualization.center) {
+      map.current.flyTo({
+        center: mapVisualization.center,
+        zoom: mapVisualization.zoom || 13,
+        pitch: 70,
+        bearing: -17.6,
+        duration: 2000,
+      });
+    }
+
+    // Remove existing backend layers if they exist
+    const layerIds = Object.keys(mapVisualization.layers);
+    layerIds.forEach(layerId => {
+      if (map.current!.getLayer(`backend-${layerId}`)) {
+        map.current!.removeLayer(`backend-${layerId}`);
+      }
+      if (map.current!.getSource(`backend-${layerId}`)) {
+        map.current!.removeSource(`backend-${layerId}`);
+      }
+    });
+
+    // Add all layers from backend
+    Object.entries(mapVisualization.layers).forEach(([layerId, layerData]: [string, any]) => {
+      if (!layerData || !layerData.features) {
+        console.warn(`⚠️  Skipping layer ${layerId}: no features`);
+        return;
+      }
+
+      const sourceId = `backend-${layerId}`;
+      const mapLayerId = `backend-${layerId}`;
+
+      // Add source
+      map.current!.addSource(sourceId, {
+        type: 'geojson',
+        data: layerData
+      });
+
+      // Determine layer type and styling based on geometry type
+      const firstFeature = layerData.features[0];
+      if (!firstFeature) return;
+
+      const geometryType = firstFeature.geometry.type;
+
+      if (geometryType === 'Point') {
+        // Render as circles or heatmap
+        if (layerId.includes('heatmap')) {
+          // Heatmap layer
+          map.current!.addLayer({
+            id: mapLayerId,
+            type: 'heatmap',
+            source: sourceId,
+            paint: {
+              'heatmap-weight': ['get', 'weight'],
+              'heatmap-intensity': 1,
+              'heatmap-color': [
+                'interpolate',
+                ['linear'],
+                ['heatmap-density'],
+                0, 'rgba(33,102,172,0)',
+                0.2, 'rgb(103,169,207)',
+                0.4, 'rgb(209,229,240)',
+                0.6, 'rgb(253,219,199)',
+                0.8, 'rgb(239,138,98)',
+                1, 'rgb(178,24,43)'
+              ],
+              'heatmap-radius': 30,
+              'heatmap-opacity': 0.8
+            }
+          });
+        } else {
+          // Point markers
+          map.current!.addLayer({
+            id: mapLayerId,
+            type: 'circle',
+            source: sourceId,
+            paint: {
+              'circle-radius': layerId.includes('marker') ? 8 : 6,
+              'circle-color': [
+                'case',
+                ['has', 'color'],
+                ['get', 'color'],
+                '#3b82f6'  // Default blue
+              ],
+              'circle-opacity': 0.8,
+              'circle-stroke-width': 2,
+              'circle-stroke-color': '#ffffff'
+            }
+          });
+
+          // Add labels for markers
+          if (layerId.includes('marker')) {
+            map.current!.addLayer({
+              id: `${mapLayerId}-label`,
+              type: 'symbol',
+              source: sourceId,
+              layout: {
+                'text-field': ['get', 'label'],
+                'text-size': 12,
+                'text-offset': [0, 1.5],
+                'text-anchor': 'top'
+              },
+              paint: {
+                'text-color': '#ffffff',
+                'text-halo-color': '#000000',
+                'text-halo-width': 1
+              }
+            });
+          }
+        }
+      } else if (geometryType === 'Polygon') {
+        // Render as fill
+        map.current!.addLayer({
+          id: mapLayerId,
+          type: 'fill',
+          source: sourceId,
+          paint: {
+            'fill-color': [
+              'case',
+              ['has', 'color'],
+              ['get', 'color'],
+              '#3b82f6'  // Default blue
+            ],
+            'fill-opacity': [
+              'case',
+              ['has', 'opacity'],
+              ['get', 'opacity'],
+              0.3  // Default opacity
+            ]
+          }
+        });
+
+        // Add outline
+        map.current!.addLayer({
+          id: `${mapLayerId}-outline`,
+          type: 'line',
+          source: sourceId,
+          paint: {
+            'line-color': [
+              'case',
+              ['has', 'color'],
+              ['get', 'color'],
+              '#3b82f6'
+            ],
+            'line-width': 2,
+            'line-opacity': 0.8
+          }
+        });
+
+        // Add labels for zones
+        if (layerId.includes('zone') || layerId.includes('impact')) {
+          map.current!.addLayer({
+            id: `${mapLayerId}-label`,
+            type: 'symbol',
+            source: sourceId,
+            layout: {
+              'text-field': ['get', 'label'],
+              'text-size': 14,
+              'text-anchor': 'center'
+            },
+            paint: {
+              'text-color': '#ffffff',
+              'text-halo-color': '#000000',
+              'text-halo-width': 2
+            }
+          });
+        }
+      } else if (geometryType === 'LineString') {
+        // Render as line
+        map.current!.addLayer({
+          id: mapLayerId,
+          type: 'line',
+          source: sourceId,
+          paint: {
+            'line-color': [
+              'case',
+              ['has', 'color'],
+              ['get', 'color'],
+              '#3b82f6'  // Default blue
+            ],
+            'line-width': 3,
+            'line-opacity': 0.8
+          }
+        });
+      }
+
+      console.log(`✓ Added layer: ${layerId} (${layerData.features.length} features)`);
+    });
+
+    console.log(`✅ Rendered ${Object.keys(mapVisualization.layers).length} layers on map`);
+  }, [mapVisualization, mapLoaded]);
 
   // DYNAMIC SIMULATION EFFECTS
   useEffect(() => {

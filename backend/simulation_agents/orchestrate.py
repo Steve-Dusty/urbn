@@ -31,6 +31,7 @@ from .simple_chat_agent import chat_with_documents
 from .document_manager import get_parsed_context
 from .city_data_agent import city_data_agent_stream, collect_city_data_sync
 from .policy_analysis_agent import analyze_policy_document_stream, analyze_policy_document_sync
+from .mapbox_agent import generate_map_visualization
 from .thoughts_stream_agent import (
     get_thoughts_stream,
     emit_thought,
@@ -115,6 +116,10 @@ def supervisor_agent(state: AgentState) -> AgentState:
         next_agent = "thoughts_stream"
         print("💭 Routing to: THOUGHTS STREAM (get agent reasoning stream)")
 
+    elif action == "generate_map":
+        next_agent = "mapbox"
+        print("🗺️  Routing to: MAPBOX AGENT (generate map visualizations from policy)")
+
     else:
         # Use LLM to determine intent if action not specified
         print("🤔 No explicit action - analyzing user intent...")
@@ -133,6 +138,7 @@ Available agents:
 - city_data: Collect city statistics (population, housing, traffic, GDP) using Tavily
 - policy_analysis: Analyze policy document intent and extract simulation parameters
 - thoughts_stream: Get live stream of agent reasoning and decisions
+- generate_map: Generate map visualization with context-relevant indicators from policy
 
 Respond with ONLY the agent name, nothing else."""
 
@@ -414,7 +420,45 @@ def thoughts_stream_agent_node(state: AgentState) -> AgentState:
     return state
 
 
-def route_next(state: AgentState) -> Literal["parser", "chat", "scraper", "simulation", "debate", "aggregator", "city_data", "policy_analysis", "thoughts_stream", "end"]:
+def mapbox_agent_node(state: AgentState) -> AgentState:
+    """Mapbox agent - generates map visualizations with maximum context-relevant indicators."""
+    print("\n" + "="*60)
+    print("🗺️  MAPBOX AGENT: Generating map visualization")
+    print("="*60 + "\n")
+
+    # Emit thought
+    emit_thought(
+        agent_type=AgentType.MAPBOX_AGENT,
+        thought_type=ThoughtType.ACTION,
+        message="Mapbox Agent activated - generating map layers from policy data",
+        metadata={}
+    )
+
+    # Get optional policy data from metadata
+    policy_data = state.get("metadata", {}).get("policy_data", None)
+
+    # Generate map visualization
+    result = generate_map_visualization(policy_data=policy_data)
+
+    state["response"] = result
+    state["messages"].append(f"Mapbox: Generated {result.get('metadata', {}).get('indicators_generated', 0)} map layers")
+    state["next_agent"] = "end"
+
+    if result.get("status") == "success":
+        metadata = result.get("metadata", {})
+        print(f"✓ Map generation complete")
+        print(f"  City: {result.get('city', 'N/A')}")
+        print(f"  Layers: {metadata.get('indicators_generated', 0)}")
+        print(f"  Features: {metadata.get('total_features', 0)}")
+    else:
+        print(f"✗ Map generation failed: {result.get('message', 'Unknown error')}")
+
+    print("="*60 + "\n")
+
+    return state
+
+
+def route_next(state: AgentState) -> Literal["parser", "chat", "scraper", "simulation", "debate", "aggregator", "city_data", "policy_analysis", "thoughts_stream", "mapbox", "end"]:
     """Router function that determines next node based on supervisor decision."""
     next_agent = state.get("next_agent", "end")
     print(f"🔀 ROUTER: Next destination -> {next_agent}")
@@ -438,6 +482,7 @@ def create_workflow() -> StateGraph:
     workflow.add_node("city_data", city_data_agent_node)
     workflow.add_node("policy_analysis", policy_analysis_agent_node)
     workflow.add_node("thoughts_stream", thoughts_stream_agent_node)
+    workflow.add_node("mapbox", mapbox_agent_node)
 
     # Set entry point
     workflow.set_entry_point("supervisor")
@@ -456,6 +501,7 @@ def create_workflow() -> StateGraph:
             "city_data": "city_data",
             "policy_analysis": "policy_analysis",
             "thoughts_stream": "thoughts_stream",
+            "mapbox": "mapbox",
             "end": END
         }
     )
@@ -470,6 +516,7 @@ def create_workflow() -> StateGraph:
     workflow.add_edge("city_data", END)
     workflow.add_edge("policy_analysis", END)
     workflow.add_edge("thoughts_stream", END)
+    workflow.add_edge("mapbox", END)
 
     return workflow.compile()
 
