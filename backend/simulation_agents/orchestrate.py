@@ -19,16 +19,17 @@ Architecture Flow:
 Key Insight: Parser → Context → Simulation (with Chat) → Debate → Aggregator
 """
 
-from typing import TypedDict, Annotated, Literal, Generator
+from typing import TypedDict, Literal, Generator
 from langgraph.graph import StateGraph, END
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain.schema import HumanMessage, SystemMessage
+from langchain.schema import HumanMessage
 import os
 from dotenv import load_dotenv
 
 from .parser_agent import parse_documents
 from .simple_chat_agent import chat_with_documents
 from .document_manager import get_parsed_context
+from .city_data_agent import city_data_agent_stream, collect_city_data_sync
 
 load_dotenv()
 
@@ -94,6 +95,10 @@ def supervisor_agent(state: AgentState) -> AgentState:
         next_agent = "aggregator"
         print("📊 Routing to: AGGREGATOR AGENT (final report compilation)")
 
+    elif action == "city_data":
+        next_agent = "city_data"
+        print("🏙️  Routing to: CITY DATA AGENT (collect population, housing, traffic, GDP)")
+
     else:
         # Use LLM to determine intent if action not specified
         print("🤔 No explicit action - analyzing user intent...")
@@ -109,6 +114,7 @@ Available agents:
 - simulate: Full simulation workflow (parse → map visualization → analysis)
 - debate: Multi-agent debate on policy implications
 - aggregator: Compile final reports and recommendations
+- city_data: Collect city statistics (population, housing, traffic, GDP) using Tavily
 
 Respond with ONLY the agent name, nothing else."""
 
@@ -269,7 +275,40 @@ def aggregator_agent_node(state: AgentState) -> AgentState:
     return state
 
 
-def route_next(state: AgentState) -> Literal["parser", "chat", "scraper", "simulation", "debate", "aggregator", "end"]:
+def city_data_agent_node(state: AgentState) -> AgentState:
+    """City Data agent - collects city statistics using Tavily API."""
+    print("\n" + "="*60)
+    print("🏙️  CITY DATA AGENT: Collecting city statistics")
+    print("="*60 + "\n")
+
+    # Get city from state metadata or extract from document context
+    city = state.get("metadata", {}).get("city", None)
+
+    # Get parsed context from document manager
+    doc_context = get_parsed_context()
+
+    # Check if we should stream or return sync
+    stream = state.get("metadata", {}).get("stream", False)
+
+    if stream:
+        # Return streaming generator for real-time updates
+        state["response"] = city_data_agent_stream(city=city, document_context=doc_context)
+        state["messages"].append("CityData: Streaming city data collection")
+    else:
+        # Return synchronous result
+        result = collect_city_data_sync(city=city, document_context=doc_context)
+        state["response"] = result
+        state["messages"].append(f"CityData: Collected data for {result.get('city', 'unknown')}")
+
+    state["next_agent"] = "end"
+
+    print("✓ City Data agent initialized")
+    print("="*60 + "\n")
+
+    return state
+
+
+def route_next(state: AgentState) -> Literal["parser", "chat", "scraper", "simulation", "debate", "aggregator", "city_data", "end"]:
     """Router function that determines next node based on supervisor decision."""
     next_agent = state.get("next_agent", "end")
     print(f"🔀 ROUTER: Next destination -> {next_agent}")
@@ -290,6 +329,7 @@ def create_workflow() -> StateGraph:
     workflow.add_node("simulation", simulation_agent_node)
     workflow.add_node("debate", debate_agent_node)
     workflow.add_node("aggregator", aggregator_agent_node)
+    workflow.add_node("city_data", city_data_agent_node)
 
     # Set entry point
     workflow.set_entry_point("supervisor")
@@ -305,6 +345,7 @@ def create_workflow() -> StateGraph:
             "simulate": "simulation",
             "debate": "debate",
             "aggregator": "aggregator",
+            "city_data": "city_data",
             "end": END
         }
     )
@@ -316,6 +357,7 @@ def create_workflow() -> StateGraph:
     workflow.add_edge("simulation", END)
     workflow.add_edge("debate", END)
     workflow.add_edge("aggregator", END)
+    workflow.add_edge("city_data", END)
 
     return workflow.compile()
 

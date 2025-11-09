@@ -19,22 +19,25 @@ export function HomePage() {
 
     mapboxgl.accessToken = MAPBOX_TOKEN;
 
-    // Initialize map with standard style (brighter)
+    // Initialize map with DARK style - Palantir look
     map.current = new mapboxgl.Map({
       container: mapContainer.current,
-      style: 'mapbox://styles/mapbox/standard', // Brighter style
+      style: 'mapbox://styles/mapbox/dark-v11', // Dark style for Palantir look
       center: [-122.4194, 37.7749], // San Francisco
-      zoom: 13,
-      pitch: 60,
+      zoom: 16, // EVEN CLOSER - street level
+      pitch: 75, // More dramatic 3D angle
       bearing: -17,
       antialias: true,
-      interactive: false, // Disable interaction for background
-      attributionControl: false, // Hide attribution
+      interactive: false,
+      attributionControl: false,
     });
 
     // Add 3D buildings layer
     map.current.on('load', () => {
       if (!map.current) return;
+
+      console.log('✅ Map loaded, container:', mapContainer.current);
+      console.log('✅ Map canvas:', mapContainer.current?.querySelector('canvas'));
 
       map.current.addLayer({
         'id': '3d-buildings',
@@ -44,14 +47,21 @@ export function HomePage() {
         'type': 'fill-extrusion',
         'minzoom': 12,
         'paint': {
-          'fill-extrusion-color': '#718096', // Brighter gray
+          'fill-extrusion-color': [
+            'interpolate',
+            ['linear'],
+            ['get', 'height'],
+            0, '#2d3748', // Dark blue-gray for short buildings
+            50, '#4a5568', // Medium gray
+            100, '#718096', // Light gray for tall buildings
+          ],
           'fill-extrusion-height': [
             'interpolate',
             ['linear'],
             ['zoom'],
             12, 0,
             12.05,
-            ['get', 'height']
+            ['*', ['get', 'height'], 1.2] // Exaggerate height for more drama
           ],
           'fill-extrusion-base': [
             'interpolate',
@@ -61,28 +71,40 @@ export function HomePage() {
             12.05,
             ['get', 'min_height']
           ],
-          'fill-extrusion-opacity': 0.8, // More visible
+          'fill-extrusion-opacity': 0.95, // More solid
           'fill-extrusion-vertical-gradient': true
         }
       });
 
-      // Start smooth rotation animation
+      // Add glowing edges effect - Palantir style
+      map.current.addLayer({
+        'id': 'building-edges',
+        'source': 'composite',
+        'source-layer': 'building',
+        'filter': ['==', 'extrude', 'true'],
+        'type': 'line',
+        'paint': {
+          'line-color': '#60a5fa', // Blue glow
+          'line-width': 0.5,
+          'line-opacity': 0.6
+        }
+      });
+
+      // Start VERY VERY SLOW rotation animation
       const animate = () => {
         if (!map.current) return;
-        
-        rotationRef.current += 0.1; // Slow rotation speed
-        
-        // Smoothly rotate the map
+
+        rotationRef.current += 0.005; // EXTREMELY SLOW (was 0.02)
+
         map.current.easeTo({
-          bearing: -17 + Math.sin(rotationRef.current * 0.01) * 10, // Gentle sway
-          duration: 0, // Instant for smooth animation
+          bearing: -17 + Math.sin(rotationRef.current * 0.005) * 3, // Very subtle sway
+          duration: 0,
         });
 
-        // Also slowly pan the map
         const center = map.current.getCenter();
-        const newLng = center.lng + Math.sin(rotationRef.current * 0.005) * 0.001;
-        const newLat = center.lat + Math.cos(rotationRef.current * 0.005) * 0.001;
-        
+        const newLng = center.lng + Math.sin(rotationRef.current * 0.001) * 0.0002; // VERY SLOW pan
+        const newLat = center.lat + Math.cos(rotationRef.current * 0.001) * 0.0002;
+
         map.current.easeTo({
           center: [newLng, newLat],
           duration: 0,
@@ -108,13 +130,21 @@ export function HomePage() {
   return (
     <div className="relative min-h-screen bg-black overflow-hidden">
       {/* Animated Map Background */}
-      <div ref={mapContainer} className="absolute inset-0 opacity-70" />
-      
-      {/* Lighter overlay for better text readability */}
-      <div className="absolute inset-0 bg-gradient-to-br from-black/50 via-black/40 to-black/50"></div>
-      
+      <div
+        ref={mapContainer}
+        className="absolute inset-0"
+        style={{
+          width: '100%',
+          height: '100vh',
+          zIndex: 0
+        }}
+      />
+
+      {/* Lighter overlay so map is MORE visible */}
+      <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-black/20 to-black/40" style={{ zIndex: 1 }}></div>
+
       {/* Subtle animated particles */}
-      <div className="absolute inset-0">
+      <div className="absolute inset-0" style={{ zIndex: 2 }}>
         {[...Array(30)].map((_, i) => (
           <div
             key={i}
@@ -130,25 +160,25 @@ export function HomePage() {
       </div>
 
       {/* Content */}
-      <div className="relative z-10 min-h-screen flex items-center justify-center px-8">
+      <div className="absolute inset-0 flex items-center justify-center px-8" style={{ zIndex: 100 }}>
         <div className="text-center max-w-6xl">
           <div className="mb-8 inline-block">
             <div className="w-20 h-20 bg-gradient-to-br from-purple-600 to-blue-600 rounded-3xl flex items-center justify-center mx-auto shadow-2xl shadow-purple-500/50 animate-pulse">
               <MapPin className="w-10 h-10 text-white" />
             </div>
           </div>
-          
-          <h1 className="text-8xl font-black text-white mb-6 tracking-tight">
+
+          <h1 className="text-8xl font-black text-white mb-6 tracking-tight drop-shadow-2xl">
             URBAN
           </h1>
-          
-          <p className="text-3xl text-white/70 mb-4 font-light tracking-wide">
+
+          <p className="text-3xl text-white/90 mb-4 font-light tracking-wide drop-shadow-lg">
             AI-Powered Policy Simulation
           </p>
-          
+
           <div className="relative inline-block mb-12">
             <div className="absolute -inset-1 bg-gradient-to-r from-purple-600 via-blue-600 to-cyan-600 rounded-2xl blur-xl opacity-75 animate-pulse"></div>
-            <div className="relative bg-black/80 backdrop-blur-xl border border-white/20 rounded-2xl px-12 py-6">
+            <div className="relative bg-black/60 backdrop-blur-xl border border-white/20 rounded-2xl px-12 py-6">
               <p className="text-white/90 text-xl font-light leading-relaxed max-w-3xl">
                 Simulate government policies with AI agents. <br/>
                 Real data. Real impact. Real-time analysis.
@@ -173,7 +203,7 @@ export function HomePage() {
               className="group relative"
             >
               <div className="absolute -inset-1 bg-gradient-to-r from-cyan-600 to-green-600 rounded-2xl blur-lg opacity-75 group-hover:opacity-100 transition"></div>
-              <div className="relative bg-black border-2 border-white/30 px-12 py-5 rounded-2xl font-bold text-xl text-white flex items-center gap-3 hover:border-white/60 transition">
+              <div className="relative bg-black/80 border-2 border-white/30 px-12 py-5 rounded-2xl font-bold text-xl text-white flex items-center gap-3 hover:border-white/60 transition">
                 <Zap className="w-6 h-6" />
                 Create Agents
               </div>
@@ -184,4 +214,3 @@ export function HomePage() {
     </div>
   );
 }
-

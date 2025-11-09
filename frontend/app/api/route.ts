@@ -53,6 +53,26 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    if (endpoint === 'orchestrate') {
+      // Handle generic orchestrate requests (city_data, parse, etc.)
+      const body = await request.json();
+
+      const response = await fetch(`${BACKEND_URL}/orchestrate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+      });
+
+      if (!response.ok) {
+        throw new Error('Orchestrate failed');
+      }
+
+      const data = await response.json();
+      return NextResponse.json(data);
+    }
+
     return NextResponse.json({ error: 'Unknown endpoint' }, { status: 400 });
   } catch (error) {
     console.error('API error:', error);

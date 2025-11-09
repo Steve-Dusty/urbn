@@ -28,6 +28,8 @@ class OrchestrationRequest(BaseModel):
     action: str
     message: str = ""
     session_id: str = "default"
+    city: str = ""
+    stream: bool = False
 
 
 @app.get("/")
@@ -96,6 +98,35 @@ async def run_orchestrate(request: OrchestrationRequest = None):
                     "X-Accel-Buffering": "no",
                 }
             )
+
+        elif request.action == "city_data":
+            # City data action - check if streaming or sync
+            if request.stream:
+                # Streaming mode for real-time updates
+                def generate_city_data():
+                    for chunk in orchestrate(
+                        action="city_data",
+                        city=request.city,
+                        stream=True
+                    ):
+                        yield f"data: {json.dumps({'chunk': chunk})}\n\n"
+
+                return StreamingResponse(
+                    generate_city_data(),
+                    media_type="text/event-stream",
+                    headers={
+                        "Cache-Control": "no-cache",
+                        "X-Accel-Buffering": "no",
+                    }
+                )
+            else:
+                # Synchronous mode - return complete result
+                result = orchestrate(
+                    action="city_data",
+                    city=request.city,
+                    stream=False
+                )
+                return result
 
         else:
             # Other actions return dict

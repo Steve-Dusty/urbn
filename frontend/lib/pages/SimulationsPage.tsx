@@ -5,15 +5,18 @@ import { DynamicSimulationMap } from '../components/DynamicSimulationMap';
 import { simulationsService, policyDocsService } from '../services/storage';
 
 export function SimulationsPage() {
-  const [city, setCity] = useState('San Francisco, CA');
+  const [city, setCity] = useState('');
   const [runningSimulation, setRunningSimulation] = useState<string | null>(null);
   const [simulationResults, setSimulationResults] = useState<any>(null);
   const [uploadedPolicyDoc, setUploadedPolicyDoc] = useState<File | null>(null);
-  
+
+  // City Data State - fetched from city_data agent
+  const [cityData, setCityData] = useState<any>(null);
+  const [loadingCityData, setLoadingCityData] = useState(false);
+
   // Left Modal State
   const [simulationFocus, setSimulationFocus] = useState('Urban Traffic');
   const [perspectiveMode, setPerspectiveMode] = useState<'Macro' | 'Micro'>('Macro');
-  const [population] = useState(850000);
   const [is3D, setIs3D] = useState(true);
   const [showAgentStream, setShowAgentStream] = useState(false); // Collapsed by default
   const [showPolicyAnalysis, setShowPolicyAnalysis] = useState(false); // Modal closed by default
@@ -29,6 +32,70 @@ export function SimulationsPage() {
   const [chatInput, setChatInput] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
   const chatMessagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Note: City data is fetched after document upload in handleFileUpload
+  // We don't fetch on mount to avoid unnecessary API calls
+
+  const fetchCityData = async (cityName?: string) => {
+    setLoadingCityData(true);
+    try {
+      const targetCity = cityName || city.split(',')[0]; // Extract city name (e.g., "San Francisco" from "San Francisco, CA")
+      console.log('🏙️ Fetching city data for:', targetCity);
+
+      const response = await fetch('/api?endpoint=orchestrate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'city_data',
+          city: targetCity,
+          stream: false
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch city data');
+      }
+
+      const data = await response.json();
+      console.log('✅ City data received:', data);
+      console.log('📊 Report preview:', data.report?.substring(0, 500));
+      console.log('🏙️ City extracted:', data.city);
+      console.log('📦 Raw data:', data.raw_data);
+      setCityData(data);
+
+      // DO NOT auto-populate city search bar - user wants to keep it as is
+      // if (data.city && data.city !== targetCity) {
+      //   setCity(`${data.city}, CA`);
+      // }
+    } catch (error) {
+      console.error('❌ Error fetching city data:', error);
+    } finally {
+      setLoadingCityData(false);
+    }
+  };
+
+  // Get metric value - NO REGEX, just use numbers directly
+  const getMetricValue = (metric: string): string => {
+    if (!cityData?.numbers) {
+      return 'N/A';
+    }
+
+    const numbers = cityData.numbers;
+
+    if (metric === 'population' && numbers.population_number) {
+      return `${Math.round(numbers.population_number / 1000)}K`;
+    } else if (metric === 'housing' && numbers.housing_number) {
+      return `${Math.round(numbers.housing_number / 1000)}K`;
+    } else if (metric === 'traffic' && numbers.traffic_percentage) {
+      return `${Math.round(numbers.traffic_percentage)}%`;
+    } else if (metric === 'gdp' && numbers.gdp_percentage) {
+      return `${numbers.gdp_percentage}%`;
+    }
+
+    return 'N/A';
+  };
 
   // No WebSocket - using direct API calls instead
   // WebSocket simulation updates removed - using direct API polling if needed
@@ -230,6 +297,10 @@ export function SimulationsPage() {
         await policyDocsService.upload(file);
         setUploadedPolicyDoc(file);
         alert(`✅ Policy document uploaded: ${file.name}`);
+
+        // Fetch city data after upload (document will be parsed and city extracted)
+        console.log('📄 Document uploaded, fetching city data...');
+        await fetchCityData(); // This will extract city from the uploaded document
       } catch (error) {
         console.error('Error uploading file:', error);
         alert('Failed to upload file');
@@ -259,6 +330,16 @@ export function SimulationsPage() {
 
   return (
     <div className="relative h-screen bg-black overflow-hidden">
+      {/* Debug Panel - Remove after testing */}
+      {cityData && (
+        <div className="fixed top-20 right-4 z-50 bg-red-900/90 text-white p-4 rounded text-xs max-w-sm">
+          <div className="font-bold mb-2">🐛 DEBUG: City Data Loaded</div>
+          <div>City: {cityData.city}</div>
+          <div>Has Report: {cityData.report ? 'YES' : 'NO'}</div>
+          <div>Report Length: {cityData.report?.length || 0}</div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="absolute top-0 left-0 right-0 z-50">
         <div className="relative">
@@ -369,8 +450,12 @@ export function SimulationsPage() {
               <Users className="w-4 h-4 text-purple-400" />
               <span className="text-white/70 text-xs font-medium">Population</span>
             </div>
-            <div className="text-white text-2xl font-bold">{population.toLocaleString()}</div>
-            <div className="text-green-400 text-xs mt-1">+2.3% YoY</div>
+            <div className="text-white text-2xl font-bold">
+              {getMetricValue('population')}
+            </div>
+            <div className="text-red-400 text-xs mt-1">
+              City Data
+            </div>
           </div>
 
           <div className="w-[150px] rounded-xl bg-neutral-900/80 backdrop-blur-md border border-neutral-700 shadow-lg p-4">
@@ -378,8 +463,12 @@ export function SimulationsPage() {
               <Building2 className="w-4 h-4 text-blue-400" />
               <span className="text-white/70 text-xs font-medium">Housing Units</span>
             </div>
-            <div className="text-white text-2xl font-bold">387K</div>
-            <div className="text-green-400 text-xs mt-1">+1.8% YoY</div>
+            <div className="text-white text-2xl font-bold">
+              {getMetricValue('housing')}
+            </div>
+            <div className="text-red-400 text-xs mt-1">
+              New Units
+            </div>
           </div>
 
           <div className="w-[150px] rounded-xl bg-neutral-900/80 backdrop-blur-md border border-neutral-700 shadow-lg p-4">
@@ -387,8 +476,12 @@ export function SimulationsPage() {
               <Car className="w-4 h-4 text-orange-400" />
               <span className="text-white/70 text-xs font-medium">Traffic Flow</span>
             </div>
-            <div className="text-white text-2xl font-bold">45%</div>
-            <div className="text-red-400 text-xs mt-1">-3.2% YoY</div>
+            <div className="text-white text-2xl font-bold">
+              {getMetricValue('traffic')}
+            </div>
+            <div className="text-orange-400 text-xs mt-1">
+              Congestion
+            </div>
           </div>
 
           <div className="w-[150px] rounded-xl bg-neutral-900/80 backdrop-blur-md border border-neutral-700 shadow-lg p-4">
@@ -396,8 +489,12 @@ export function SimulationsPage() {
               <TrendingUp className="w-4 h-4 text-green-400" />
               <span className="text-white/70 text-xs font-medium">GDP Growth</span>
             </div>
-            <div className="text-white text-2xl font-bold">3.1%</div>
-            <div className="text-green-400 text-xs mt-1">+0.5% YoY</div>
+            <div className="text-white text-2xl font-bold">
+              {getMetricValue('gdp')}
+            </div>
+            <div className="text-green-400 text-xs mt-1">
+              Annual Rate
+            </div>
           </div>
         </div>
 
