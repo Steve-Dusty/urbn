@@ -375,117 +375,208 @@ export function DynamicSimulationMap({ city, simulationData, messages, simulatio
 
     console.log(`✅ Rendered ${Object.keys(mapVisualization.layers).length} layers on map`);
 
-    // AUTO-OPEN SMALL DARK POPUPS ON EVERY MARKER/ZONE
-    const autoOpenPopups = () => {
-      let delay = 500; // Start after 500ms
+    // CREATE CLICKABLE CIRCLES FOR EACH ZONE/MARKER (instead of auto-popups)
+    const clickableMarkers: mapboxgl.Marker[] = [];
+    const popupDataMap = new Map<mapboxgl.Marker, any>(); // Store popup data for each marker
 
-      Object.entries(mapVisualization.layers).forEach(([layerId, layerData]: [string, any]) => {
-        if (!layerData?.features) return;
+    Object.entries(mapVisualization.layers).forEach(([layerId, layerData]: [string, any]) => {
+      if (!layerData?.features) return;
 
-        // Only auto-open for zones and markers (not heatmaps or roads)
-        const isZoneOrMarker = layerId.includes('zone') || 
-                               layerId.includes('marker') || 
-                               layerId.includes('impact') || 
-                               layerId.includes('affordability') || 
-                               layerId.includes('zoning') ||
-                               layerId.includes('construction') ||
-                               layerId.includes('infrastructure');
+      // Only create clickable circles for zones and markers (not heatmaps or roads)
+      const isZoneOrMarker = layerId.includes('zone') || 
+                             layerId.includes('marker') || 
+                             layerId.includes('impact') || 
+                             layerId.includes('affordability') || 
+                             layerId.includes('zoning') ||
+                             layerId.includes('construction') ||
+                             layerId.includes('infrastructure');
 
-        if (!isZoneOrMarker) return;
+      if (!isZoneOrMarker) return;
 
-        layerData.features.forEach((feature: any, index: number) => {
-          const props = feature.properties;
-          if (!props.explanation && !props.citation) return; // Skip if no data
+      layerData.features.forEach((feature: any, index: number) => {
+        const props = feature.properties;
+        if (!props.explanation && !props.citation) return; // Skip if no data
 
-          // Calculate center point for polygon zones
-          let coordinates: [number, number];
-          if (feature.geometry.type === 'Polygon') {
-            // Get centroid of polygon
-            const coords = feature.geometry.coordinates[0];
-            const lngs = coords.map((c: number[]) => c[0]);
-            const lats = coords.map((c: number[]) => c[1]);
-            coordinates = [
-              lngs.reduce((a: number, b: number) => a + b, 0) / lngs.length,
-              lats.reduce((a: number, b: number) => a + b, 0) / lats.length
-            ];
-          } else if (feature.geometry.type === 'Point') {
-            coordinates = feature.geometry.coordinates as [number, number];
-          } else {
-            return; // Skip non-polygon/non-point features
+        // Calculate center point for polygon zones
+        let coordinates: [number, number];
+        if (feature.geometry.type === 'Polygon') {
+          // Get centroid of polygon
+          const coords = feature.geometry.coordinates[0];
+          const lngs = coords.map((c: number[]) => c[0]);
+          const lats = coords.map((c: number[]) => c[1]);
+          coordinates = [
+            lngs.reduce((a: number, b: number) => a + b, 0) / lngs.length,
+            lats.reduce((a: number, b: number) => a + b, 0) / lats.length
+          ];
+        } else if (feature.geometry.type === 'Point') {
+          coordinates = feature.geometry.coordinates as [number, number];
+        } else {
+          return; // Skip non-polygon/non-point features
+        }
+
+        // Create clickable circle element
+        const circleEl = document.createElement('div');
+        circleEl.className = 'clickable-info-circle';
+        circleEl.innerHTML = `
+          <div style="
+            width: 24px;
+            height: 24px;
+            background: radial-gradient(circle, #3b82f6 0%, #2563eb 100%);
+            border: 3px solid #fff;
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.4), 0 0 0 2px rgba(59,130,246,0.3);
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: bold;
+            color: white;
+          ">i</div>
+        `;
+
+        // Add hover effect
+        circleEl.addEventListener('mouseenter', () => {
+          const inner = circleEl.querySelector('div') as HTMLElement;
+          if (inner) {
+            inner.style.transform = 'scale(1.3)';
+            inner.style.boxShadow = '0 4px 16px rgba(59,130,246,0.6), 0 0 0 4px rgba(59,130,246,0.2)';
           }
+        });
+        circleEl.addEventListener('mouseleave', () => {
+          const inner = circleEl.querySelector('div') as HTMLElement;
+          if (inner) {
+            inner.style.transform = 'scale(1)';
+            inner.style.boxShadow = '0 2px 8px rgba(0,0,0,0.4), 0 0 0 2px rgba(59,130,246,0.3)';
+          }
+        });
 
-          // Build LARGE DETAILED DARK popup HTML with extensive explanation
+        // Create marker
+        const marker = new mapboxgl.Marker(circleEl)
+          .setLngLat(coordinates)
+          .addTo(map.current!);
+
+        // Store popup data for this marker
+        popupDataMap.set(marker, { props, coordinates, feature });
+
+        // Add click handler
+        circleEl.addEventListener('click', () => {
+          // Close any existing popups first
+          document.querySelectorAll('.mapboxgl-popup').forEach(popup => {
+            (popup as any).remove?.();
+          });
+
+          const storedData = popupDataMap.get(marker);
+          if (!storedData) return;
+
+          const { props: storedProps, coordinates: storedCoords } = storedData;
+          
+          // Get current zoom level for relative sizing
+          const currentZoom = map.current?.getZoom() || 13;
+          const baseSize = 280; // Much smaller base size
+          const zoomFactor = Math.max(0.7, Math.min(1.1, currentZoom / 13)); // Scale between 0.7x and 1.1x
+          const dynamicSize = Math.round(baseSize * zoomFactor);
+          const dynamicPadding = Math.round(16 * zoomFactor);
+          const dynamicFontSize = Math.round(16 * zoomFactor);
+          const dynamicBodySize = Math.round(13 * zoomFactor);
+
+          // Build popup HTML with zoom-relative sizing (COMPACT)
           const popupHTML = `
-            <div style="padding: 24px; min-width: 450px; max-width: 550px; font-family: system-ui, -apple-system, sans-serif; background: linear-gradient(135deg, #1a1a1a 0%, #0f0f0f 100%); border: 2px solid #3b82f6; border-radius: 16px; box-shadow: 0 8px 32px rgba(0,0,0,0.8), 0 0 0 1px rgba(59,130,246,0.3);">
-              <h3 style="margin: 0 0 20px 0; font-size: 22px; font-weight: 800; color: #fff; border-bottom: 3px solid #3b82f6; padding-bottom: 12px; letter-spacing: -0.5px;">
-                ${props.label || props.location || 'Policy Indicator'}
+            <div style="padding: ${dynamicPadding}px; min-width: ${dynamicSize}px; max-width: ${Math.round(dynamicSize * 1.15)}px; font-family: system-ui, -apple-system, sans-serif; background: linear-gradient(135deg, #1a1a1a 0%, #0f0f0f 100%); border: 2px solid #3b82f6; border-radius: 12px; box-shadow: 0 8px 32px rgba(0,0,0,0.8), 0 0 0 1px rgba(59,130,246,0.3);">
+              <h3 style="margin: 0 0 ${Math.round(12 * zoomFactor)}px 0; font-size: ${dynamicFontSize}px; font-weight: 800; color: #fff; border-bottom: 2px solid #3b82f6; padding-bottom: ${Math.round(8 * zoomFactor)}px; letter-spacing: -0.5px;">
+                ${storedProps.label || storedProps.location || 'Policy Indicator'}
               </h3>
-              ${props.explanation ? `
-                <div style="margin: 20px 0; padding: 20px; background: linear-gradient(135deg, #252525 0%, #1f1f1f 100%); border-left: 5px solid #3b82f6; border-radius: 12px; box-shadow: inset 0 2px 8px rgba(0,0,0,0.3);">
-                  <div style="font-size: 12px; font-weight: 700; color: #3b82f6; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px; display: flex; align-items: center; gap: 8px;">
-                    <span style="font-size: 16px;">📝</span> DETAILED EXPLANATION
+              ${storedProps.explanation ? `
+                <div style="margin: ${Math.round(12 * zoomFactor)}px 0; padding: ${Math.round(12 * zoomFactor)}px; background: linear-gradient(135deg, #252525 0%, #1f1f1f 100%); border-left: 3px solid #3b82f6; border-radius: 8px; box-shadow: inset 0 2px 8px rgba(0,0,0,0.3);">
+                  <div style="font-size: ${Math.round(10 * zoomFactor)}px; font-weight: 700; color: #3b82f6; margin-bottom: ${Math.round(8 * zoomFactor)}px; text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; gap: 6px;">
+                    <span style="font-size: ${Math.round(12 * zoomFactor)}px;">📝</span> EXPLANATION
                   </div>
-                  <p style="margin: 0; font-size: 15px; color: #e5e7eb; line-height: 1.8; font-weight: 400;">
-                    ${props.explanation}
+                  <p style="margin: 0; font-size: ${dynamicBodySize}px; color: #e5e7eb; line-height: 1.6; font-weight: 400;">
+                    ${storedProps.explanation}
                   </p>
                 </div>
               ` : ''}
-              ${props.citation ? `
-                <div style="margin: 20px 0; padding: 20px; background: linear-gradient(135deg, #252525 0%, #1f1f1f 100%); border-left: 5px solid #2563eb; border-radius: 12px; box-shadow: inset 0 2px 8px rgba(0,0,0,0.3);">
-                  <div style="font-size: 12px; font-weight: 700; color: #60a5fa; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px; display: flex; align-items: center; gap: 8px;">
-                    <span style="font-size: 16px;">📚</span> POLICY DOCUMENT CITATION
+              ${storedProps.citation ? `
+                <div style="margin: ${Math.round(12 * zoomFactor)}px 0; padding: ${Math.round(12 * zoomFactor)}px; background: linear-gradient(135deg, #252525 0%, #1f1f1f 100%); border-left: 3px solid #2563eb; border-radius: 8px; box-shadow: inset 0 2px 8px rgba(0,0,0,0.3);">
+                  <div style="font-size: ${Math.round(10 * zoomFactor)}px; font-weight: 700; color: #60a5fa; margin-bottom: ${Math.round(8 * zoomFactor)}px; text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; gap: 6px;">
+                    <span style="font-size: ${Math.round(12 * zoomFactor)}px;">📚</span> CITATION
                   </div>
-                  <div style="font-size: 14px; color: #d1d5db; line-height: 1.7; font-weight: 400;">
-                    ${props.citation}
+                  <div style="font-size: ${Math.round(12 * zoomFactor)}px; color: #d1d5db; line-height: 1.5; font-weight: 400;">
+                    ${storedProps.citation}
                   </div>
                 </div>
               ` : ''}
-              ${props.timeline ? `
-                <div style="margin: 20px 0; padding: 18px; background: linear-gradient(135deg, #252525 0%, #1f1f1f 100%); border-left: 5px solid #f59e0b; border-radius: 12px; box-shadow: inset 0 2px 8px rgba(0,0,0,0.3);">
-                  <div style="font-size: 12px; font-weight: 700; color: #fbbf24; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1px; display: flex; align-items: center; gap: 8px;">
-                    <span style="font-size: 16px;">⏱️</span> IMPLEMENTATION TIMELINE
+              ${storedProps.timeline ? `
+                <div style="margin: ${Math.round(12 * zoomFactor)}px 0; padding: ${Math.round(10 * zoomFactor)}px; background: linear-gradient(135deg, #252525 0%, #1f1f1f 100%); border-left: 3px solid #f59e0b; border-radius: 8px; box-shadow: inset 0 2px 8px rgba(0,0,0,0.3);">
+                  <div style="font-size: ${Math.round(10 * zoomFactor)}px; font-weight: 700; color: #fbbf24; margin-bottom: ${Math.round(6 * zoomFactor)}px; text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; gap: 6px;">
+                    <span style="font-size: ${Math.round(12 * zoomFactor)}px;">⏱️</span> TIMELINE
                   </div>
-                  <div style="font-size: 15px; color: #fde68a; font-weight: 600; line-height: 1.6;">${props.timeline}</div>
+                  <div style="font-size: ${Math.round(13 * zoomFactor)}px; color: #fde68a; font-weight: 600; line-height: 1.5;">${storedProps.timeline}</div>
                 </div>
               ` : ''}
-              ${props.units ? `
-                <div style="margin: 20px 0; padding: 18px; background: linear-gradient(135deg, #252525 0%, #1f1f1f 100%); border-left: 5px solid #10b981; border-radius: 12px; box-shadow: inset 0 2px 8px rgba(0,0,0,0.3);">
-                  <div style="font-size: 12px; font-weight: 700; color: #34d399; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1px; display: flex; align-items: center; gap: 8px;">
-                    <span style="font-size: 16px;">🏗️</span> HOUSING UNITS
+              ${storedProps.units ? `
+                <div style="margin: ${Math.round(12 * zoomFactor)}px 0; padding: ${Math.round(10 * zoomFactor)}px; background: linear-gradient(135deg, #252525 0%, #1f1f1f 100%); border-left: 3px solid #10b981; border-radius: 8px; box-shadow: inset 0 2px 8px rgba(0,0,0,0.3);">
+                  <div style="font-size: ${Math.round(10 * zoomFactor)}px; font-weight: 700; color: #34d399; margin-bottom: ${Math.round(6 * zoomFactor)}px; text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; gap: 6px;">
+                    <span style="font-size: ${Math.round(12 * zoomFactor)}px;">🏗️</span> UNITS
                   </div>
-                  <div style="font-size: 24px; font-weight: 800; color: #10b981; letter-spacing: -0.5px;">${props.units}</div>
+                  <div style="font-size: ${Math.round(18 * zoomFactor)}px; font-weight: 800; color: #10b981; letter-spacing: -0.5px;">${storedProps.units}</div>
                 </div>
               ` : ''}
-              ${props.location ? `
-                <div style="margin-top: 20px; padding-top: 16px; border-top: 1px solid #333; font-size: 12px; color: #9ca3af; text-align: center;">
-                  Location: <span style="color: #d1d5db; font-weight: 600;">${props.location}</span>
+              ${storedProps.location ? `
+                <div style="margin-top: ${Math.round(12 * zoomFactor)}px; padding-top: ${Math.round(10 * zoomFactor)}px; border-top: 1px solid #333; font-size: ${Math.round(10 * zoomFactor)}px; color: #9ca3af; text-align: center;">
+                  Location: <span style="color: #d1d5db; font-weight: 600;">${storedProps.location}</span>
                 </div>
               ` : ''}
             </div>
           `;
 
-          // Create and auto-open LARGE popup with staggered timing
+          // Create popup with NO white background (COMPACT)
+          const popup = new mapboxgl.Popup({
+            closeButton: true,
+            closeOnClick: true,
+            maxWidth: `${Math.round(dynamicSize * 1.15)}px`,
+            className: 'clickable-popup-dark',
+            anchor: 'bottom',
+            offset: [0, -10]
+          })
+            .setLngLat(storedCoords)
+            .setHTML(popupHTML)
+            .addTo(map.current!);
+
+          // Remove white background from Mapbox popup
           setTimeout(() => {
-            new mapboxgl.Popup({
-              closeButton: true,
-              closeOnClick: false,
-              maxWidth: '600px',
-              className: 'auto-popup-dark-large',
-              anchor: 'bottom',
-              offset: [0, -10]
-            })
-              .setLngLat(coordinates)
-              .setHTML(popupHTML)
-              .addTo(map.current!);
-          }, delay);
-
-          delay += 300; // Stagger each popup by 300ms (faster)
+            const popupElement = document.querySelector('.mapboxgl-popup-content') as HTMLElement;
+            if (popupElement) {
+              popupElement.style.background = 'transparent';
+              popupElement.style.padding = '0';
+            }
+            const popupContainer = document.querySelector('.mapboxgl-popup') as HTMLElement;
+            if (popupContainer) {
+              popupContainer.style.background = 'transparent';
+            }
+          }, 10);
         });
-      });
-    };
 
-    // Auto-open popups after a short delay
-    setTimeout(autoOpenPopups, 800);
+        clickableMarkers.push(marker);
+      });
+    });
+
+    // Update popup size on zoom
+    map.current?.on('zoom', () => {
+      const activePopup = document.querySelector('.mapboxgl-popup') as HTMLElement;
+      if (activePopup) {
+        const popupContent = activePopup.querySelector('.mapboxgl-popup-content') as HTMLElement;
+        if (popupContent) {
+          const currentZoom = map.current?.getZoom() || 13;
+          const baseSize = 280; // Much smaller base size
+          const zoomFactor = Math.max(0.7, Math.min(1.1, currentZoom / 13));
+          const dynamicSize = Math.round(baseSize * zoomFactor);
+          popupContent.style.minWidth = `${dynamicSize}px`;
+          popupContent.style.maxWidth = `${Math.round(dynamicSize * 1.15)}px`;
+        }
+      }
+    });
 
     // ADD CLICK HANDLERS FOR POPUPS with explanations and citations
     Object.keys(mapVisualization.layers).forEach(layerId => {
@@ -498,61 +589,70 @@ export function DynamicSimulationMap({ city, simulationData, messages, simulatio
         const feature = e.features[0];
         const props = feature.properties;
 
-        // Build LARGE DETAILED DARK popup HTML with extensive explanation
+        // Get current zoom level for relative sizing
+        const currentZoom = map.current?.getZoom() || 13;
+        const baseSize = 280; // Much smaller base size
+        const zoomFactor = Math.max(0.7, Math.min(1.1, currentZoom / 13)); // Scale between 0.7x and 1.1x
+        const dynamicSize = Math.round(baseSize * zoomFactor);
+        const dynamicPadding = Math.round(16 * zoomFactor);
+        const dynamicFontSize = Math.round(16 * zoomFactor);
+        const dynamicBodySize = Math.round(13 * zoomFactor);
+
+        // Build COMPACT DARK popup HTML with zoom-relative sizing
         const popupHTML = `
-          <div style="padding: 24px; min-width: 450px; max-width: 550px; font-family: system-ui, -apple-system, sans-serif; background: linear-gradient(135deg, #1a1a1a 0%, #0f0f0f 100%); border: 2px solid #3b82f6; border-radius: 16px; box-shadow: 0 8px 32px rgba(0,0,0,0.8), 0 0 0 1px rgba(59,130,246,0.3);">
-            <h3 style="margin: 0 0 20px 0; font-size: 22px; font-weight: 800; color: #fff; border-bottom: 3px solid #3b82f6; padding-bottom: 12px; letter-spacing: -0.5px;">
+          <div style="padding: ${dynamicPadding}px; min-width: ${dynamicSize}px; max-width: ${Math.round(dynamicSize * 1.15)}px; font-family: system-ui, -apple-system, sans-serif; background: linear-gradient(135deg, #1a1a1a 0%, #0f0f0f 100%); border: 2px solid #3b82f6; border-radius: 12px; box-shadow: 0 8px 32px rgba(0,0,0,0.8), 0 0 0 1px rgba(59,130,246,0.3);">
+            <h3 style="margin: 0 0 ${Math.round(12 * zoomFactor)}px 0; font-size: ${dynamicFontSize}px; font-weight: 800; color: #fff; border-bottom: 2px solid #3b82f6; padding-bottom: ${Math.round(8 * zoomFactor)}px; letter-spacing: -0.5px;">
               ${props.label || props.location || 'Policy Indicator'}
             </h3>
             ${props.explanation ? `
-              <div style="margin: 20px 0; padding: 20px; background: linear-gradient(135deg, #252525 0%, #1f1f1f 100%); border-left: 5px solid #3b82f6; border-radius: 12px; box-shadow: inset 0 2px 8px rgba(0,0,0,0.3);">
-                <div style="font-size: 12px; font-weight: 700; color: #3b82f6; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px; display: flex; align-items: center; gap: 8px;">
-                  <span style="font-size: 16px;">📝</span> DETAILED EXPLANATION
+              <div style="margin: ${Math.round(12 * zoomFactor)}px 0; padding: ${Math.round(12 * zoomFactor)}px; background: linear-gradient(135deg, #252525 0%, #1f1f1f 100%); border-left: 3px solid #3b82f6; border-radius: 8px; box-shadow: inset 0 2px 8px rgba(0,0,0,0.3);">
+                <div style="font-size: ${Math.round(10 * zoomFactor)}px; font-weight: 700; color: #3b82f6; margin-bottom: ${Math.round(8 * zoomFactor)}px; text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; gap: 6px;">
+                  <span style="font-size: ${Math.round(12 * zoomFactor)}px;">📝</span> EXPLANATION
                 </div>
-                <p style="margin: 0; font-size: 15px; color: #e5e7eb; line-height: 1.8; font-weight: 400;">
+                <p style="margin: 0; font-size: ${dynamicBodySize}px; color: #e5e7eb; line-height: 1.6; font-weight: 400;">
                   ${props.explanation}
                 </p>
               </div>
             ` : ''}
             ${props.citation ? `
-              <div style="margin: 20px 0; padding: 20px; background: linear-gradient(135deg, #252525 0%, #1f1f1f 100%); border-left: 5px solid #2563eb; border-radius: 12px; box-shadow: inset 0 2px 8px rgba(0,0,0,0.3);">
-                <div style="font-size: 12px; font-weight: 700; color: #60a5fa; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px; display: flex; align-items: center; gap: 8px;">
-                  <span style="font-size: 16px;">📚</span> POLICY DOCUMENT CITATION
+              <div style="margin: ${Math.round(12 * zoomFactor)}px 0; padding: ${Math.round(12 * zoomFactor)}px; background: linear-gradient(135deg, #252525 0%, #1f1f1f 100%); border-left: 3px solid #2563eb; border-radius: 8px; box-shadow: inset 0 2px 8px rgba(0,0,0,0.3);">
+                <div style="font-size: ${Math.round(10 * zoomFactor)}px; font-weight: 700; color: #60a5fa; margin-bottom: ${Math.round(8 * zoomFactor)}px; text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; gap: 6px;">
+                  <span style="font-size: ${Math.round(12 * zoomFactor)}px;">📚</span> CITATION
                 </div>
-                <div style="font-size: 14px; color: #d1d5db; line-height: 1.7; font-weight: 400;">
+                <div style="font-size: ${Math.round(12 * zoomFactor)}px; color: #d1d5db; line-height: 1.5; font-weight: 400;">
                   ${props.citation}
                 </div>
               </div>
             ` : ''}
             ${props.timeline ? `
-              <div style="margin: 20px 0; padding: 18px; background: linear-gradient(135deg, #252525 0%, #1f1f1f 100%); border-left: 5px solid #f59e0b; border-radius: 12px; box-shadow: inset 0 2px 8px rgba(0,0,0,0.3);">
-                <div style="font-size: 12px; font-weight: 700; color: #fbbf24; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1px; display: flex; align-items: center; gap: 8px;">
-                  <span style="font-size: 16px;">⏱️</span> IMPLEMENTATION TIMELINE
+              <div style="margin: ${Math.round(12 * zoomFactor)}px 0; padding: ${Math.round(10 * zoomFactor)}px; background: linear-gradient(135deg, #252525 0%, #1f1f1f 100%); border-left: 3px solid #f59e0b; border-radius: 8px; box-shadow: inset 0 2px 8px rgba(0,0,0,0.3);">
+                <div style="font-size: ${Math.round(10 * zoomFactor)}px; font-weight: 700; color: #fbbf24; margin-bottom: ${Math.round(6 * zoomFactor)}px; text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; gap: 6px;">
+                  <span style="font-size: ${Math.round(12 * zoomFactor)}px;">⏱️</span> TIMELINE
                 </div>
-                <div style="font-size: 15px; color: #fde68a; font-weight: 600; line-height: 1.6;">${props.timeline}</div>
+                <div style="font-size: ${Math.round(13 * zoomFactor)}px; color: #fde68a; font-weight: 600; line-height: 1.5;">${props.timeline}</div>
               </div>
             ` : ''}
             ${props.units ? `
-              <div style="margin: 20px 0; padding: 18px; background: linear-gradient(135deg, #252525 0%, #1f1f1f 100%); border-left: 5px solid #10b981; border-radius: 12px; box-shadow: inset 0 2px 8px rgba(0,0,0,0.3);">
-                <div style="font-size: 12px; font-weight: 700; color: #34d399; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1px; display: flex; align-items: center; gap: 8px;">
-                  <span style="font-size: 16px;">🏗️</span> HOUSING UNITS
+              <div style="margin: ${Math.round(12 * zoomFactor)}px 0; padding: ${Math.round(10 * zoomFactor)}px; background: linear-gradient(135deg, #252525 0%, #1f1f1f 100%); border-left: 3px solid #10b981; border-radius: 8px; box-shadow: inset 0 2px 8px rgba(0,0,0,0.3);">
+                <div style="font-size: ${Math.round(10 * zoomFactor)}px; font-weight: 700; color: #34d399; margin-bottom: ${Math.round(6 * zoomFactor)}px; text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; gap: 6px;">
+                  <span style="font-size: ${Math.round(12 * zoomFactor)}px;">🏗️</span> UNITS
                 </div>
-                <div style="font-size: 24px; font-weight: 800; color: #10b981; letter-spacing: -0.5px;">${props.units}</div>
+                <div style="font-size: ${Math.round(18 * zoomFactor)}px; font-weight: 800; color: #10b981; letter-spacing: -0.5px;">${props.units}</div>
               </div>
             ` : ''}
             ${props.location ? `
-              <div style="margin-top: 20px; padding-top: 16px; border-top: 1px solid #333; font-size: 12px; color: #9ca3af; text-align: center;">
+              <div style="margin-top: ${Math.round(12 * zoomFactor)}px; padding-top: ${Math.round(10 * zoomFactor)}px; border-top: 1px solid #333; font-size: ${Math.round(10 * zoomFactor)}px; color: #9ca3af; text-align: center;">
                 Location: <span style="color: #d1d5db; font-weight: 600;">${props.location}</span>
               </div>
             ` : ''}
           </div>
         `;
 
-        // Create and display LARGE DARK popup
-        new mapboxgl.Popup({
+        // Create and display COMPACT DARK popup with NO white background
+        const popup = new mapboxgl.Popup({
           closeButton: true,
           closeOnClick: true,
-          maxWidth: '600px',
+          maxWidth: `${Math.round(dynamicSize * 1.15)}px`,
           className: 'click-popup-dark-large',
           anchor: 'bottom',
           offset: [0, -10]
@@ -560,6 +660,19 @@ export function DynamicSimulationMap({ city, simulationData, messages, simulatio
           .setLngLat(e.lngLat)
           .setHTML(popupHTML)
           .addTo(map.current!);
+
+        // Remove white background from Mapbox popup
+        setTimeout(() => {
+          const popupElement = document.querySelector('.mapboxgl-popup-content') as HTMLElement;
+          if (popupElement) {
+            popupElement.style.background = 'transparent';
+            popupElement.style.padding = '0';
+          }
+          const popupContainer = document.querySelector('.mapboxgl-popup') as HTMLElement;
+          if (popupContainer) {
+            popupContainer.style.background = 'transparent';
+          }
+        }, 10);
       });
 
       // Change cursor on hover

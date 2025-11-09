@@ -14,6 +14,22 @@
   @apply mb-4;
 }
 
+/* Remove white background from Mapbox popups */
+.mapboxgl-popup-content {
+  background: transparent !important;
+  padding: 0 !important;
+  box-shadow: none !important;
+}
+
+.mapboxgl-popup {
+  background: transparent !important;
+}
+
+.mapboxgl-popup-tip {
+  border-top-color: transparent !important;
+  border-bottom-color: transparent !important;
+}
+
 /* Scrollbar styling */
 ::-webkit-scrollbar {
   width: 8px;
