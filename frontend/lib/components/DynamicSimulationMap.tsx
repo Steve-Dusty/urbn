@@ -471,110 +471,86 @@ export function DynamicSimulationMap({ city, simulationData, messages, simulatio
           if (!storedData) return;
 
           const { props: storedProps, coordinates: storedCoords } = storedData;
-          
-          // Get current zoom level for relative sizing
-          const currentZoom = map.current?.getZoom() || 13;
-          const baseSize = 280; // Much smaller base size
-          const zoomFactor = Math.max(0.7, Math.min(1.1, currentZoom / 13)); // Scale between 0.7x and 1.1x
-          const dynamicSize = Math.round(baseSize * zoomFactor);
-          const dynamicPadding = Math.round(16 * zoomFactor);
-          const dynamicFontSize = Math.round(16 * zoomFactor);
-          const dynamicBodySize = Math.round(13 * zoomFactor);
 
-          // Build popup HTML with zoom-relative sizing (COMPACT)
+          // Build popup HTML using Mapbox native structure with futuristic classes
           const popupHTML = `
-            <div style="padding: ${dynamicPadding}px; min-width: ${dynamicSize}px; max-width: ${Math.round(dynamicSize * 1.15)}px; font-family: system-ui, -apple-system, sans-serif; background: linear-gradient(135deg, #1a1a1a 0%, #0f0f0f 100%); border: 2px solid #3b82f6; border-radius: 12px; box-shadow: 0 8px 32px rgba(0,0,0,0.8), 0 0 0 1px rgba(59,130,246,0.3);">
-              <h3 style="margin: 0 0 ${Math.round(12 * zoomFactor)}px 0; font-size: ${dynamicFontSize}px; font-weight: 800; color: #fff; border-bottom: 2px solid #3b82f6; padding-bottom: ${Math.round(8 * zoomFactor)}px; letter-spacing: -0.5px;">
-                ${storedProps.label || storedProps.location || 'Policy Indicator'}
-              </h3>
-              ${storedProps.explanation ? `
-                <div style="margin: ${Math.round(12 * zoomFactor)}px 0; padding: ${Math.round(12 * zoomFactor)}px; background: linear-gradient(135deg, #252525 0%, #1f1f1f 100%); border-left: 3px solid #3b82f6; border-radius: 8px; box-shadow: inset 0 2px 8px rgba(0,0,0,0.3);">
-                  <div style="font-size: ${Math.round(10 * zoomFactor)}px; font-weight: 700; color: #3b82f6; margin-bottom: ${Math.round(8 * zoomFactor)}px; text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; gap: 6px;">
-                    <span style="font-size: ${Math.round(12 * zoomFactor)}px;">📝</span> EXPLANATION
-                  </div>
-                  <p style="margin: 0; font-size: ${dynamicBodySize}px; color: #e5e7eb; line-height: 1.6; font-weight: 400;">
-                    ${storedProps.explanation}
-                  </p>
+            <h3 class="futuristic-popup-title">
+              ${storedProps.label || storedProps.location || 'Policy Indicator'}
+            </h3>
+            ${storedProps.explanation ? `
+              <div class="futuristic-popup-section explanation">
+                <div class="futuristic-popup-label explanation">
+                  <span>📝</span> EXPLANATION
                 </div>
-              ` : ''}
-              ${storedProps.citation ? `
-                <div style="margin: ${Math.round(12 * zoomFactor)}px 0; padding: ${Math.round(12 * zoomFactor)}px; background: linear-gradient(135deg, #252525 0%, #1f1f1f 100%); border-left: 3px solid #2563eb; border-radius: 8px; box-shadow: inset 0 2px 8px rgba(0,0,0,0.3);">
-                  <div style="font-size: ${Math.round(10 * zoomFactor)}px; font-weight: 700; color: #60a5fa; margin-bottom: ${Math.round(8 * zoomFactor)}px; text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; gap: 6px;">
-                    <span style="font-size: ${Math.round(12 * zoomFactor)}px;">📚</span> CITATION
-                  </div>
-                  <div style="font-size: ${Math.round(12 * zoomFactor)}px; color: #d1d5db; line-height: 1.5; font-weight: 400;">
-                    ${storedProps.citation}
-                  </div>
+                <p class="futuristic-popup-text">
+                  ${storedProps.explanation}
+                </p>
+              </div>
+            ` : ''}
+            ${storedProps.citation ? `
+              <div class="futuristic-popup-section citation">
+                <div class="futuristic-popup-label citation">
+                  <span>📚</span> POLICY DOCUMENT CITATION
                 </div>
-              ` : ''}
-              ${storedProps.timeline ? `
-                <div style="margin: ${Math.round(12 * zoomFactor)}px 0; padding: ${Math.round(10 * zoomFactor)}px; background: linear-gradient(135deg, #252525 0%, #1f1f1f 100%); border-left: 3px solid #f59e0b; border-radius: 8px; box-shadow: inset 0 2px 8px rgba(0,0,0,0.3);">
-                  <div style="font-size: ${Math.round(10 * zoomFactor)}px; font-weight: 700; color: #fbbf24; margin-bottom: ${Math.round(6 * zoomFactor)}px; text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; gap: 6px;">
-                    <span style="font-size: ${Math.round(12 * zoomFactor)}px;">⏱️</span> TIMELINE
-                  </div>
-                  <div style="font-size: ${Math.round(13 * zoomFactor)}px; color: #fde68a; font-weight: 600; line-height: 1.5;">${storedProps.timeline}</div>
+                <div class="futuristic-popup-text">
+                  ${storedProps.citation}
                 </div>
-              ` : ''}
-              ${storedProps.units ? `
-                <div style="margin: ${Math.round(12 * zoomFactor)}px 0; padding: ${Math.round(10 * zoomFactor)}px; background: linear-gradient(135deg, #252525 0%, #1f1f1f 100%); border-left: 3px solid #10b981; border-radius: 8px; box-shadow: inset 0 2px 8px rgba(0,0,0,0.3);">
-                  <div style="font-size: ${Math.round(10 * zoomFactor)}px; font-weight: 700; color: #34d399; margin-bottom: ${Math.round(6 * zoomFactor)}px; text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; gap: 6px;">
-                    <span style="font-size: ${Math.round(12 * zoomFactor)}px;">🏗️</span> UNITS
-                  </div>
-                  <div style="font-size: ${Math.round(18 * zoomFactor)}px; font-weight: 800; color: #10b981; letter-spacing: -0.5px;">${storedProps.units}</div>
+              </div>
+            ` : ''}
+            ${storedProps.timeline ? `
+              <div class="futuristic-popup-section timeline">
+                <div class="futuristic-popup-label timeline">
+                  <span>⏱️</span> IMPLEMENTATION TIMELINE
                 </div>
-              ` : ''}
-              ${storedProps.location ? `
-                <div style="margin-top: ${Math.round(12 * zoomFactor)}px; padding-top: ${Math.round(10 * zoomFactor)}px; border-top: 1px solid #333; font-size: ${Math.round(10 * zoomFactor)}px; color: #9ca3af; text-align: center;">
-                  Location: <span style="color: #d1d5db; font-weight: 600;">${storedProps.location}</span>
+                <div class="futuristic-popup-text" style="color: #fde68a; font-weight: 600;">
+                  ${storedProps.timeline}
                 </div>
-              ` : ''}
-            </div>
+              </div>
+            ` : ''}
+            ${storedProps.units ? `
+              <div class="futuristic-popup-section units">
+                <div class="futuristic-popup-label units">
+                  <span>🏗️</span> HOUSING UNITS
+                </div>
+                <div class="futuristic-popup-text" style="font-size: 20px; font-weight: 800; color: #10b981; letter-spacing: -0.5px;">
+                  ${storedProps.units}
+                </div>
+              </div>
+            ` : ''}
+            ${storedProps.location ? `
+              <div class="futuristic-popup-footer">
+                Location: <span style="color: #d1d5db; font-weight: 600;">${storedProps.location}</span>
+              </div>
+            ` : ''}
           `;
 
-          // Create popup with NO white background (COMPACT)
+          // Create Mapbox native popup with futuristic styling
           const popup = new mapboxgl.Popup({
             closeButton: true,
             closeOnClick: true,
-            maxWidth: `${Math.round(dynamicSize * 1.15)}px`,
-            className: 'clickable-popup-dark',
+            maxWidth: '320px',
+            className: 'futuristic-popup',
             anchor: 'bottom',
             offset: [0, -10]
           })
             .setLngLat(storedCoords)
             .setHTML(popupHTML)
             .addTo(map.current!);
-
-          // Remove white background from Mapbox popup
-          setTimeout(() => {
-            const popupElement = document.querySelector('.mapboxgl-popup-content') as HTMLElement;
-            if (popupElement) {
-              popupElement.style.background = 'transparent';
-              popupElement.style.padding = '0';
-            }
-            const popupContainer = document.querySelector('.mapboxgl-popup') as HTMLElement;
-            if (popupContainer) {
-              popupContainer.style.background = 'transparent';
-            }
-          }, 10);
         });
 
         clickableMarkers.push(marker);
       });
     });
 
-    // Update popup size on zoom
+    // Update popup size on zoom (using CSS classes, so just update max-width)
     map.current?.on('zoom', () => {
       const activePopup = document.querySelector('.mapboxgl-popup') as HTMLElement;
       if (activePopup) {
-        const popupContent = activePopup.querySelector('.mapboxgl-popup-content') as HTMLElement;
-        if (popupContent) {
-          const currentZoom = map.current?.getZoom() || 13;
-          const baseSize = 280; // Much smaller base size
-          const zoomFactor = Math.max(0.7, Math.min(1.1, currentZoom / 13));
-          const dynamicSize = Math.round(baseSize * zoomFactor);
-          popupContent.style.minWidth = `${dynamicSize}px`;
-          popupContent.style.maxWidth = `${Math.round(dynamicSize * 1.15)}px`;
-        }
+        const currentZoom = map.current?.getZoom() || 13;
+        const baseSize = 280;
+        const zoomFactor = Math.max(0.7, Math.min(1.1, currentZoom / 13));
+        const dynamicSize = Math.round(baseSize * zoomFactor);
+        activePopup.style.maxWidth = `${dynamicSize}px`;
       }
     });
 
@@ -589,90 +565,70 @@ export function DynamicSimulationMap({ city, simulationData, messages, simulatio
         const feature = e.features[0];
         const props = feature.properties;
 
-        // Get current zoom level for relative sizing
-        const currentZoom = map.current?.getZoom() || 13;
-        const baseSize = 280; // Much smaller base size
-        const zoomFactor = Math.max(0.7, Math.min(1.1, currentZoom / 13)); // Scale between 0.7x and 1.1x
-        const dynamicSize = Math.round(baseSize * zoomFactor);
-        const dynamicPadding = Math.round(16 * zoomFactor);
-        const dynamicFontSize = Math.round(16 * zoomFactor);
-        const dynamicBodySize = Math.round(13 * zoomFactor);
-
-        // Build COMPACT DARK popup HTML with zoom-relative sizing
+        // Build popup HTML using Mapbox native structure with futuristic classes
         const popupHTML = `
-          <div style="padding: ${dynamicPadding}px; min-width: ${dynamicSize}px; max-width: ${Math.round(dynamicSize * 1.15)}px; font-family: system-ui, -apple-system, sans-serif; background: linear-gradient(135deg, #1a1a1a 0%, #0f0f0f 100%); border: 2px solid #3b82f6; border-radius: 12px; box-shadow: 0 8px 32px rgba(0,0,0,0.8), 0 0 0 1px rgba(59,130,246,0.3);">
-            <h3 style="margin: 0 0 ${Math.round(12 * zoomFactor)}px 0; font-size: ${dynamicFontSize}px; font-weight: 800; color: #fff; border-bottom: 2px solid #3b82f6; padding-bottom: ${Math.round(8 * zoomFactor)}px; letter-spacing: -0.5px;">
-              ${props.label || props.location || 'Policy Indicator'}
-            </h3>
-            ${props.explanation ? `
-              <div style="margin: ${Math.round(12 * zoomFactor)}px 0; padding: ${Math.round(12 * zoomFactor)}px; background: linear-gradient(135deg, #252525 0%, #1f1f1f 100%); border-left: 3px solid #3b82f6; border-radius: 8px; box-shadow: inset 0 2px 8px rgba(0,0,0,0.3);">
-                <div style="font-size: ${Math.round(10 * zoomFactor)}px; font-weight: 700; color: #3b82f6; margin-bottom: ${Math.round(8 * zoomFactor)}px; text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; gap: 6px;">
-                  <span style="font-size: ${Math.round(12 * zoomFactor)}px;">📝</span> EXPLANATION
-                </div>
-                <p style="margin: 0; font-size: ${dynamicBodySize}px; color: #e5e7eb; line-height: 1.6; font-weight: 400;">
-                  ${props.explanation}
-                </p>
+          <h3 class="futuristic-popup-title">
+            ${props.label || props.location || 'Policy Indicator'}
+          </h3>
+          ${props.explanation ? `
+            <div class="futuristic-popup-section explanation">
+              <div class="futuristic-popup-label explanation">
+                <span>📝</span> EXPLANATION
               </div>
-            ` : ''}
-            ${props.citation ? `
-              <div style="margin: ${Math.round(12 * zoomFactor)}px 0; padding: ${Math.round(12 * zoomFactor)}px; background: linear-gradient(135deg, #252525 0%, #1f1f1f 100%); border-left: 3px solid #2563eb; border-radius: 8px; box-shadow: inset 0 2px 8px rgba(0,0,0,0.3);">
-                <div style="font-size: ${Math.round(10 * zoomFactor)}px; font-weight: 700; color: #60a5fa; margin-bottom: ${Math.round(8 * zoomFactor)}px; text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; gap: 6px;">
-                  <span style="font-size: ${Math.round(12 * zoomFactor)}px;">📚</span> CITATION
-                </div>
-                <div style="font-size: ${Math.round(12 * zoomFactor)}px; color: #d1d5db; line-height: 1.5; font-weight: 400;">
-                  ${props.citation}
-                </div>
+              <p class="futuristic-popup-text">
+                ${props.explanation}
+              </p>
+            </div>
+          ` : ''}
+          ${props.citation ? `
+            <div class="futuristic-popup-section citation">
+              <div class="futuristic-popup-label citation">
+                <span>📚</span> POLICY DOCUMENT CITATION
               </div>
-            ` : ''}
-            ${props.timeline ? `
-              <div style="margin: ${Math.round(12 * zoomFactor)}px 0; padding: ${Math.round(10 * zoomFactor)}px; background: linear-gradient(135deg, #252525 0%, #1f1f1f 100%); border-left: 3px solid #f59e0b; border-radius: 8px; box-shadow: inset 0 2px 8px rgba(0,0,0,0.3);">
-                <div style="font-size: ${Math.round(10 * zoomFactor)}px; font-weight: 700; color: #fbbf24; margin-bottom: ${Math.round(6 * zoomFactor)}px; text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; gap: 6px;">
-                  <span style="font-size: ${Math.round(12 * zoomFactor)}px;">⏱️</span> TIMELINE
-                </div>
-                <div style="font-size: ${Math.round(13 * zoomFactor)}px; color: #fde68a; font-weight: 600; line-height: 1.5;">${props.timeline}</div>
+              <div class="futuristic-popup-text">
+                ${props.citation}
               </div>
-            ` : ''}
-            ${props.units ? `
-              <div style="margin: ${Math.round(12 * zoomFactor)}px 0; padding: ${Math.round(10 * zoomFactor)}px; background: linear-gradient(135deg, #252525 0%, #1f1f1f 100%); border-left: 3px solid #10b981; border-radius: 8px; box-shadow: inset 0 2px 8px rgba(0,0,0,0.3);">
-                <div style="font-size: ${Math.round(10 * zoomFactor)}px; font-weight: 700; color: #34d399; margin-bottom: ${Math.round(6 * zoomFactor)}px; text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; gap: 6px;">
-                  <span style="font-size: ${Math.round(12 * zoomFactor)}px;">🏗️</span> UNITS
-                </div>
-                <div style="font-size: ${Math.round(18 * zoomFactor)}px; font-weight: 800; color: #10b981; letter-spacing: -0.5px;">${props.units}</div>
+            </div>
+          ` : ''}
+          ${props.timeline ? `
+            <div class="futuristic-popup-section timeline">
+              <div class="futuristic-popup-label timeline">
+                <span>⏱️</span> IMPLEMENTATION TIMELINE
               </div>
-            ` : ''}
-            ${props.location ? `
-              <div style="margin-top: ${Math.round(12 * zoomFactor)}px; padding-top: ${Math.round(10 * zoomFactor)}px; border-top: 1px solid #333; font-size: ${Math.round(10 * zoomFactor)}px; color: #9ca3af; text-align: center;">
-                Location: <span style="color: #d1d5db; font-weight: 600;">${props.location}</span>
+              <div class="futuristic-popup-text" style="color: #fde68a; font-weight: 600;">
+                ${props.timeline}
               </div>
-            ` : ''}
-          </div>
+            </div>
+          ` : ''}
+          ${props.units ? `
+            <div class="futuristic-popup-section units">
+              <div class="futuristic-popup-label units">
+                <span>🏗️</span> HOUSING UNITS
+              </div>
+              <div class="futuristic-popup-text" style="font-size: 20px; font-weight: 800; color: #10b981; letter-spacing: -0.5px;">
+                ${props.units}
+              </div>
+            </div>
+          ` : ''}
+          ${props.location ? `
+            <div class="futuristic-popup-footer">
+              Location: <span style="color: #d1d5db; font-weight: 600;">${props.location}</span>
+            </div>
+          ` : ''}
         `;
 
-        // Create and display COMPACT DARK popup with NO white background
+        // Create Mapbox native popup with futuristic styling
         const popup = new mapboxgl.Popup({
           closeButton: true,
           closeOnClick: true,
-          maxWidth: `${Math.round(dynamicSize * 1.15)}px`,
-          className: 'click-popup-dark-large',
+          maxWidth: '320px',
+          className: 'futuristic-popup',
           anchor: 'bottom',
           offset: [0, -10]
         })
           .setLngLat(e.lngLat)
           .setHTML(popupHTML)
           .addTo(map.current!);
-
-        // Remove white background from Mapbox popup
-        setTimeout(() => {
-          const popupElement = document.querySelector('.mapboxgl-popup-content') as HTMLElement;
-          if (popupElement) {
-            popupElement.style.background = 'transparent';
-            popupElement.style.padding = '0';
-          }
-          const popupContainer = document.querySelector('.mapboxgl-popup') as HTMLElement;
-          if (popupContainer) {
-            popupContainer.style.background = 'transparent';
-          }
-        }, 10);
       });
 
       // Change cursor on hover

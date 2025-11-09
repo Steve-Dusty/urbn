@@ -14,20 +14,162 @@
   @apply mb-4;
 }
 
-/* Remove white background from Mapbox popups */
-.mapboxgl-popup-content {
-  background: transparent !important;
-  padding: 0 !important;
-  box-shadow: none !important;
+/* Futuristic Mapbox Popup Styling */
+.mapboxgl-popup {
+  max-width: 320px !important;
+  font-family: system-ui, -apple-system, 'SF Pro Display', -apple-system, BlinkMacSystemFont, sans-serif !important;
 }
 
-.mapboxgl-popup {
-  background: transparent !important;
+.mapboxgl-popup-content {
+  background: linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 50%, #0f0f0f 100%) !important;
+  border: 1px solid rgba(59, 130, 246, 0.4) !important;
+  border-radius: 16px !important;
+  padding: 20px !important;
+  box-shadow: 
+    0 8px 32px rgba(0, 0, 0, 0.8),
+    0 0 0 1px rgba(59, 130, 246, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 0 40px rgba(59, 130, 246, 0.1) !important;
+  backdrop-filter: blur(10px) !important;
+  position: relative !important;
+  overflow: hidden !important;
+}
+
+.mapboxgl-popup-content::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, 
+    transparent 0%,
+    rgba(59, 130, 246, 0.5) 20%,
+    rgba(59, 130, 246, 0.8) 50%,
+    rgba(59, 130, 246, 0.5) 80%,
+    transparent 100%
+  );
+  animation: shimmer 3s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 1; }
 }
 
 .mapboxgl-popup-tip {
-  border-top-color: transparent !important;
-  border-bottom-color: transparent !important;
+  border-top-color: rgba(26, 26, 26, 0.95) !important;
+  border-bottom-color: rgba(26, 26, 26, 0.95) !important;
+  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.4));
+}
+
+.mapboxgl-popup-close-button {
+  color: rgba(255, 255, 255, 0.7) !important;
+  font-size: 20px !important;
+  padding: 8px !important;
+  width: 28px !important;
+  height: 28px !important;
+  border-radius: 50% !important;
+  background: rgba(255, 255, 255, 0.05) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  transition: all 0.2s ease !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+.mapboxgl-popup-close-button:hover {
+  color: #fff !important;
+  background: rgba(239, 68, 68, 0.2) !important;
+  border-color: rgba(239, 68, 68, 0.4) !important;
+  transform: scale(1.1) !important;
+}
+
+/* Futuristic popup content classes */
+.futuristic-popup-title {
+  margin: 0 0 16px 0 !important;
+  font-size: 18px !important;
+  font-weight: 700 !important;
+  color: #fff !important;
+  border-bottom: 2px solid rgba(59, 130, 246, 0.5) !important;
+  padding-bottom: 12px !important;
+  letter-spacing: -0.3px !important;
+  text-shadow: 0 0 10px rgba(59, 130, 246, 0.3) !important;
+}
+
+.futuristic-popup-section {
+  margin: 14px 0 !important;
+  padding: 14px !important;
+  background: linear-gradient(135deg, rgba(37, 37, 37, 0.8) 0%, rgba(31, 31, 31, 0.6) 100%) !important;
+  border-left: 3px solid !important;
+  border-radius: 10px !important;
+  box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.4), 0 1px 0 rgba(255, 255, 255, 0.05) !important;
+  backdrop-filter: blur(5px) !important;
+}
+
+.futuristic-popup-section.explanation {
+  border-left-color: #3b82f6 !important;
+}
+
+.futuristic-popup-section.citation {
+  border-left-color: #2563eb !important;
+}
+
+.futuristic-popup-section.timeline {
+  border-left-color: #f59e0b !important;
+}
+
+.futuristic-popup-section.units {
+  border-left-color: #10b981 !important;
+}
+
+.futuristic-popup-label {
+  font-size: 10px !important;
+  font-weight: 700 !important;
+  margin-bottom: 8px !important;
+  text-transform: uppercase !important;
+  letter-spacing: 1px !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+}
+
+.futuristic-popup-label.explanation {
+  color: #60a5fa !important;
+}
+
+.futuristic-popup-label.citation {
+  color: #60a5fa !important;
+}
+
+.futuristic-popup-label.timeline {
+  color: #fbbf24 !important;
+}
+
+.futuristic-popup-label.units {
+  color: #34d399 !important;
+}
+
+.futuristic-popup-text {
+  margin: 0 !important;
+  font-size: 13px !important;
+  color: #e5e7eb !important;
+  line-height: 1.6 !important;
+  font-weight: 400 !important;
+}
+
+.futuristic-popup-footer {
+  margin-top: 14px !important;
+  padding-top: 12px !important;
+  border-top: 1px solid rgba(255, 255, 255, 0.1) !important;
+  font-size: 11px !important;
+  color: #9ca3af !important;
+  text-align: center !important;
+}
+
+/* Zoom-responsive sizing */
+.mapboxgl-popup-content {
+  transition: all 0.3s ease !important;
 }
 
 /* Scrollbar styling */
