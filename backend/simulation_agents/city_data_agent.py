@@ -295,8 +295,20 @@ Return VALID JSON with this EXACT structure:
 RULES:
 1. population_number: Extract the city population as an integer (e.g., 1409359 for "1.4 million" or "1,409,359")
 2. housing_number: Extract the LARGEST housing number mentioned (total stock, not new units)
-3. traffic_percentage: Extract or estimate congestion % (0-100). If text says "reduced traffic" use 15, "heavy congestion" use 45
-4. gdp_percentage: Extract GDP growth rate (0.1-10.0). If text says "healthy growth" use 2.5, "strong" use 3.0
+3. traffic_percentage: Extract or estimate congestion % (0-100). IMPORTANT: Always return a number, never null.
+   - If explicit percentage mentioned: use that number
+   - "heavy" or "severe" congestion: 50
+   - "moderate" or "daily" congestion: 30
+   - "light" or "reduced" traffic: 15
+   - If mentions congestion without qualifier: 30
+   - If no congestion info: 25
+4. gdp_percentage: Extract GDP growth rate (0.1-10.0). IMPORTANT: Always return a number, never null.
+   - If explicit percentage: use that
+   - "strong" or "robust": 3.0
+   - "healthy" or "solid": 2.5
+   - "moderate": 2.0
+   - "slow": 1.0
+   - If no specific info: 2.0
 
 EXAMPLES:
 Input: {{"population": "San Diego's population in 2025 is 1,409,359"}}
@@ -306,10 +318,16 @@ Input: {{"housing_units": "Permitted 8,782 new homes, city aims to approve 108,0
 Output: {{"population_number": null, "housing_number": 108036, "traffic_percentage": null, "gdp_percentage": null}}
 
 Input: {{"traffic_flow": "Traffic patterns show reduced traffic due to COVID-19"}}
-Output: {{"population_number": null, "housing_number": null, "traffic_percentage": 15.0, "gdp_percentage": null}}
+Output: {{"population_number": null, "housing_number": null, "traffic_percentage": 15, "gdp_percentage": null}}
+
+Input: {{"traffic_flow": "San Diego traffic flow shows daily congestion with peak hours"}}
+Output: {{"population_number": null, "housing_number": null, "traffic_percentage": 30, "gdp_percentage": null}}
 
 Input: {{"gdp_growth": "GDP growth expected to be healthy at 2.3% due to investment"}}
 Output: {{"population_number": null, "housing_number": null, "traffic_percentage": null, "gdp_percentage": 2.3}}
+
+Input: {{"gdp_growth": "Economic growth supported by trade and investment"}}
+Output: {{"population_number": null, "housing_number": null, "traffic_percentage": null, "gdp_percentage": 2.0}}
 
 NOW EXTRACT FROM THIS DATA:
 {json.dumps(all_texts, indent=2)}
