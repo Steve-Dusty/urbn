@@ -21,54 +21,66 @@
 let agentsStorage: any[] = [];
 let simulationsStorage: any[] = [];
 
-// Agents Service
+// Agents Service - NOW CONNECTED TO BACKEND
+import { agentsApi } from './api';
+
 export const agentsService = {
   // Get all agents
   list: async (): Promise<any[]> => {
-    // TODO: When backend is ready, replace with: return agentsApi.list().then(res => res.data);
-    return Promise.resolve(agentsStorage);
+    try {
+      const response = await fetch('http://localhost:8000/agents');
+      const data = await response.json();
+      return data.agents || [];
+    } catch (error) {
+      console.error('Error fetching agents:', error);
+      return [];
+    }
   },
 
   // Get single agent
   get: async (id: string): Promise<any> => {
-    // TODO: When backend is ready, replace with: return agentsApi.get(id).then(res => res.data);
-    return Promise.resolve(agentsStorage.find(a => a.id === id));
+    try {
+      const response = await fetch(`http://localhost:8000/agents/${id}`);
+      const data = await response.json();
+      return data.agent || null;
+    } catch (error) {
+      console.error('Error fetching agent:', error);
+      return null;
+    }
   },
 
   // Create agent
   create: async (data: any): Promise<any> => {
-    // TODO: When backend is ready, replace with: return agentsApi.create(data).then(res => res.data);
-    const newAgent = {
-      id: 'agent-' + Date.now(),
-      ...data,
-      status: 'ACTIVE',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      _count: {
-        simulations: 0,
-        debates: 0
-      }
-    };
-    agentsStorage.push(newAgent);
-    return Promise.resolve(newAgent);
+    try {
+      const response = await fetch('http://localhost:8000/agents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: data.name, description: data.role || data.description })
+      });
+      const result = await response.json();
+      return result.agent || result;
+    } catch (error) {
+      console.error('Error creating agent:', error);
+      throw error;
+    }
   },
 
   // Update agent
   update: async (id: string, data: any): Promise<any> => {
-    // TODO: When backend is ready, replace with: return agentsApi.update(id, data).then(res => res.data);
-    const index = agentsStorage.findIndex(a => a.id === id);
-    if (index === -1) throw new Error('Agent not found');
-    agentsStorage[index] = { ...agentsStorage[index], ...data, updatedAt: new Date().toISOString() };
-    return Promise.resolve(agentsStorage[index]);
+    // Not implemented in backend yet
+    throw new Error('Update not implemented');
   },
 
   // Delete agent
   delete: async (id: string): Promise<void> => {
-    // TODO: When backend is ready, replace with: return agentsApi.delete(id);
-    const index = agentsStorage.findIndex(a => a.id === id);
-    if (index === -1) throw new Error('Agent not found');
-    agentsStorage[index].status = 'ARCHIVED';
-    return Promise.resolve();
+    try {
+      await fetch(`http://localhost:8000/agents/${id}`, {
+        method: 'DELETE'
+      });
+    } catch (error) {
+      console.error('Error deleting agent:', error);
+      throw error;
+    }
   }
 };
 

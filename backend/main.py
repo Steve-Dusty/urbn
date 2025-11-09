@@ -7,6 +7,15 @@ import shutil
 import json
 from simulation_agents.orchestrate import orchestrate
 from simulation_agents.simple_chat_agent import refresh_documents
+from simulation_agents.create_agent import (
+    create_agent,
+    get_agent,
+    list_agents,
+    delete_agent,
+    chat_with_agent,
+    clear_chat,
+    get_chat_history
+)
 
 app = FastAPI(title="Urban Planning Simulation API")
 
@@ -233,6 +242,110 @@ def list_documents():
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error listing documents: {str(e)}")
+
+
+# ==================== CUSTOM AGENTS API ====================
+
+class CreateAgentRequest(BaseModel):
+    name: str
+    description: str
+
+
+class ChatRequest(BaseModel):
+    message: str
+    session_id: str = "default"
+
+
+@app.post("/agents")
+def create_custom_agent(request: CreateAgentRequest):
+    """Create a new custom agent."""
+    try:
+        agent = create_agent(name=request.name, description=request.description)
+        return {"status": "success", "agent": agent}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error creating agent: {str(e)}")
+
+
+@app.get("/agents")
+def get_all_agents():
+    """List all custom agents."""
+    try:
+        agents = list_agents()
+        return {"status": "success", "agents": agents, "count": len(agents)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error listing agents: {str(e)}")
+
+
+@app.get("/agents/{agent_id}")
+def get_agent_by_id(agent_id: str):
+    """Get a specific agent by ID."""
+    try:
+        agent = get_agent(agent_id)
+        if not agent:
+            raise HTTPException(status_code=404, detail="Agent not found")
+        return {"status": "success", "agent": agent}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error getting agent: {str(e)}")
+
+
+@app.delete("/agents/{agent_id}")
+def delete_custom_agent(agent_id: str):
+    """Delete a custom agent."""
+    try:
+        success = delete_agent(agent_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="Agent not found")
+        return {"status": "success", "message": "Agent deleted"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error deleting agent: {str(e)}")
+
+
+@app.post("/agents/{agent_id}/chat")
+async def chat_with_custom_agent(agent_id: str, request: ChatRequest):
+    """Chat with a custom agent (streaming)."""
+    try:
+        def generate_response():
+            for chunk in chat_with_agent(
+                agent_id=agent_id,
+                message=request.message,
+                session_id=request.session_id
+            ):
+                yield f"data: {json.dumps({'chunk': chunk})}\n\n"
+        
+        return StreamingResponse(
+            generate_response(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",
+            }
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error chatting with agent: {str(e)}")
+
+
+@app.get("/agents/{agent_id}/chat/{session_id}")
+def get_agent_chat_history(agent_id: str, session_id: str):
+    """Get chat history for an agent session."""
+    try:
+        history = get_chat_history(agent_id, session_id)
+        return {"status": "success", "history": history}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error getting chat history: {str(e)}")
+
+
+@app.delete("/agents/{agent_id}/chat/{session_id}")
+def clear_agent_chat(agent_id: str, session_id: str):
+    """Clear chat history for an agent session."""
+    try:
+        success = clear_chat(agent_id, session_id)
+        return {"status": "success", "cleared": success}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error clearing chat: {str(e)}")
 
 
 if __name__ == "__main__":

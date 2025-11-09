@@ -53,6 +53,65 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    if (endpoint === 'agents') {
+      // Handle agents API - proxy to backend
+      const { method } = request;
+      const url = new URL(request.url);
+      const path = url.searchParams.get('path') || '';
+      
+      if (method === 'GET' && !path) {
+        // List all agents
+        const response = await fetch(`${BACKEND_URL}/agents`);
+        const data = await response.json();
+        return NextResponse.json(data);
+      } else if (method === 'GET' && path && !path.includes('/')) {
+        // Get specific agent
+        const response = await fetch(`${BACKEND_URL}/agents/${path}`);
+        const data = await response.json();
+        return NextResponse.json(data);
+      } else if (method === 'POST' && path.includes('/chat')) {
+        // Chat with agent (streaming)
+        const body = await request.json();
+        const agentId = path.split('/')[0];
+        
+        const response = await fetch(`${BACKEND_URL}/agents/${agentId}/chat`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+        
+        if (!response.ok) {
+          throw new Error('Chat failed');
+        }
+        
+        return new Response(response.body, {
+          headers: {
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive',
+          },
+        });
+      } else if (method === 'POST') {
+        // Create agent
+        const body = await request.json();
+        const response = await fetch(`${BACKEND_URL}/agents`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+        const data = await response.json();
+        return NextResponse.json(data);
+      } else if (method === 'DELETE') {
+        // Delete agent
+        const agentId = path.split('/')[0];
+        const response = await fetch(`${BACKEND_URL}/agents/${agentId}`, {
+          method: 'DELETE'
+        });
+        const data = await response.json();
+        return NextResponse.json(data);
+      }
+    }
+
     if (endpoint === 'orchestrate') {
       // Handle generic orchestrate requests (city_data, parse, etc.)
       const body = await request.json();

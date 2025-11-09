@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Plus, Zap } from 'lucide-react';
+import { ArrowLeft, Plus, Zap, MessageSquare } from 'lucide-react';
 import { CreateAgentModal } from '../components/CreateAgentModal';
 import { agentsService } from '../services/storage';
 
@@ -164,14 +164,19 @@ export function AgentsDashboard() {
                       </span>
                     </div>
                     <h3 className="text-2xl font-bold text-white mb-2">{agent.name}</h3>
-                    <p className="text-white/60 mb-4">{agent.role}</p>
-                    <div className="flex items-center gap-3">
-                      <span className="px-4 py-2 bg-white/10 text-white/80 rounded-full text-sm font-medium">
-                        {agent.type}
-                      </span>
-                      <span className="text-white/50 text-sm">
-                        {agent._count?.simulations || 0} runs
-                      </span>
+                    <p className="text-white/60 mb-4">{agent.description || agent.role}</p>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <span className="px-4 py-2 bg-white/10 text-white/80 rounded-full text-sm font-medium">
+                          {agent.type || 'CUSTOM'}
+                        </span>
+                      </div>
+                      <Link
+                        href={`/agents/${agent.id}`}
+                        className="px-6 py-2 bg-gradient-to-r from-cyan-600 to-blue-600 text-white rounded-xl font-medium hover:opacity-90 transition"
+                      >
+                        Chat
+                      </Link>
                     </div>
                   </div>
                 </div>
