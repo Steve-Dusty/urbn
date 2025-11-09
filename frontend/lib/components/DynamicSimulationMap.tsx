@@ -477,26 +477,63 @@ export function DynamicSimulationMap({ city, simulationData, messages, simulatio
             <h3 class="futuristic-popup-title">
               ${storedProps.label || storedProps.location || 'Policy Indicator'}
             </h3>
-            ${storedProps.explanation ? `
-              <div class="futuristic-popup-section explanation">
-                <div class="futuristic-popup-label explanation">
-                  <span>📝</span> EXPLANATION
-                </div>
-                <p class="futuristic-popup-text">
-                  ${storedProps.explanation}
-                </p>
-              </div>
-            ` : ''}
-            ${storedProps.citation ? `
-              <div class="futuristic-popup-section citation">
-                <div class="futuristic-popup-label citation">
-                  <span>📚</span> POLICY DOCUMENT CITATION
-                </div>
-                <div class="futuristic-popup-text">
-                  ${storedProps.citation}
-                </div>
-              </div>
-            ` : ''}
+            ${(() => {
+              // Helper to escape HTML
+              const escapeHtml = (text: string) => {
+                return text
+                  .replace(/&/g, '&amp;')
+                  .replace(/</g, '&lt;')
+                  .replace(/>/g, '&gt;')
+                  .replace(/"/g, '&quot;')
+                  .replace(/'/g, '&#039;');
+              };
+              
+              // Helper to create collapsible section
+              const createCollapsibleSection = (id: string, label: string, icon: string, content: string, type: string) => {
+                const isLong = content.length > 200;
+                const uniqueId = `popup-${id}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+                
+                if (!isLong) {
+                  return `
+                    <div class="futuristic-popup-section ${type}">
+                      <div class="futuristic-popup-label ${type}">
+                        <span>${icon}</span> ${label}
+                      </div>
+                      <div class="futuristic-popup-text">
+                        ${escapeHtml(content)}
+                      </div>
+                    </div>
+                  `;
+                }
+                
+                return `
+                  <div class="futuristic-popup-section ${type}">
+                    <div class="futuristic-popup-label ${type}">
+                      <span>${icon}</span> ${label}
+                      <button class="futuristic-popup-toggle" onclick="
+                        const content = document.getElementById('${uniqueId}-content');
+                        const button = document.getElementById('${uniqueId}-button');
+                        if (content.style.maxHeight === 'none' || content.style.maxHeight === '') {
+                          content.style.maxHeight = '120px';
+                          content.style.overflow = 'hidden';
+                          button.textContent = '▼ Show More';
+                        } else {
+                          content.style.maxHeight = 'none';
+                          content.style.overflow = 'visible';
+                          button.textContent = '▲ Show Less';
+                        }
+                      " id="${uniqueId}-button">▼ Show More</button>
+                    </div>
+                    <div class="futuristic-popup-text collapsible-content" id="${uniqueId}-content" style="max-height: 120px; overflow: hidden; transition: max-height 0.3s ease;">
+                      ${escapeHtml(content)}
+                    </div>
+                  </div>
+                `;
+              };
+              
+              return (storedProps.explanation ? createCollapsibleSection('explanation', 'EXPLANATION', '📝', storedProps.explanation, 'explanation') : '') +
+                     (storedProps.citation ? createCollapsibleSection('citation', 'POLICY DOCUMENT CITATION', '📚', storedProps.citation, 'citation') : '');
+            })()}
             ${storedProps.timeline ? `
               <div class="futuristic-popup-section timeline">
                 <div class="futuristic-popup-label timeline">
@@ -565,31 +602,68 @@ export function DynamicSimulationMap({ city, simulationData, messages, simulatio
         const feature = e.features[0];
         const props = feature.properties;
 
+        // Helper function to escape HTML
+        const escapeHtml = (text: string) => {
+          return text
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+        };
+
+        // Helper function to create collapsible section
+        const createCollapsibleSection = (id: string, label: string, icon: string, content: string, type: string) => {
+          const isLong = content.length > 200; // Show dropdown if text is longer than 200 chars
+          const uniqueId = `popup-${id}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+          
+          if (!isLong) {
+            // Short text - no dropdown needed
+            return `
+              <div class="futuristic-popup-section ${type}">
+                <div class="futuristic-popup-label ${type}">
+                  <span>${icon}</span> ${label}
+                </div>
+                <div class="futuristic-popup-text">
+                  ${escapeHtml(content)}
+                </div>
+              </div>
+            `;
+          }
+          
+          // Long text - add collapsible dropdown
+          return `
+            <div class="futuristic-popup-section ${type}">
+              <div class="futuristic-popup-label ${type}">
+                <span>${icon}</span> ${label}
+                <button class="futuristic-popup-toggle" onclick="
+                  const content = document.getElementById('${uniqueId}-content');
+                  const button = document.getElementById('${uniqueId}-button');
+                  if (content.style.maxHeight === 'none' || content.style.maxHeight === '') {
+                    content.style.maxHeight = '120px';
+                    content.style.overflow = 'hidden';
+                    button.textContent = '▼ Show More';
+                  } else {
+                    content.style.maxHeight = 'none';
+                    content.style.overflow = 'visible';
+                    button.textContent = '▲ Show Less';
+                  }
+                " id="${uniqueId}-button">▼ Show More</button>
+              </div>
+              <div class="futuristic-popup-text collapsible-content" id="${uniqueId}-content" style="max-height: 120px; overflow: hidden; transition: max-height 0.3s ease;">
+                ${escapeHtml(content)}
+              </div>
+            </div>
+          `;
+        };
+
         // Build popup HTML using Mapbox native structure with futuristic classes
         const popupHTML = `
           <h3 class="futuristic-popup-title">
             ${props.label || props.location || 'Policy Indicator'}
           </h3>
-          ${props.explanation ? `
-            <div class="futuristic-popup-section explanation">
-              <div class="futuristic-popup-label explanation">
-                <span>📝</span> EXPLANATION
-              </div>
-              <p class="futuristic-popup-text">
-                ${props.explanation}
-              </p>
-            </div>
-          ` : ''}
-          ${props.citation ? `
-            <div class="futuristic-popup-section citation">
-              <div class="futuristic-popup-label citation">
-                <span>📚</span> POLICY DOCUMENT CITATION
-              </div>
-              <div class="futuristic-popup-text">
-                ${props.citation}
-              </div>
-            </div>
-          ` : ''}
+          ${props.explanation ? createCollapsibleSection('explanation', 'EXPLANATION', '📝', props.explanation, 'explanation') : ''}
+          ${props.citation ? createCollapsibleSection('citation', 'POLICY DOCUMENT CITATION', '📚', props.citation, 'citation') : ''}
           ${props.timeline ? `
             <div class="futuristic-popup-section timeline">
               <div class="futuristic-popup-label timeline">

@@ -22,6 +22,14 @@ from .policy_analysis_agent import analyze_policy_document_sync
 from .city_data_agent import collect_city_data_sync
 from .mapbox_agent import generate_map_visualization
 from .thoughts_stream_agent import emit_thought, AgentType, ThoughtType
+from .data_cache import (
+    get_cached_policy_analysis,
+    cache_policy_analysis,
+    get_cached_city_data,
+    cache_city_data,
+    get_cached_map_visualization,
+    cache_map_visualization
+)
 
 load_dotenv()
 genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
@@ -70,27 +78,55 @@ def simulate_policy_impact_stream(
         metadata={"simulation_type": simulation_type, "granularity": granularity, "time_horizon": time_horizon}
     )
 
-    # Get context if not provided
+    # Get context if not provided - WITH CACHING
     if not policy_analysis:
-        print("📄 Fetching policy analysis...")
-        policy_result = analyze_policy_document_sync()
-        if policy_result.get("status") == "success":
-            policy_analysis = policy_result.get("analysis", {})
+        print("📄 Checking policy analysis cache...")
+        cached_policy = get_cached_policy_analysis()
+        
+        if cached_policy:
+            print("✅ Using cached policy analysis")
+            policy_analysis = cached_policy
         else:
-            policy_analysis = {}
+            print("🔄 Cache miss - fetching fresh policy analysis...")
+            policy_result = analyze_policy_document_sync()
+            if policy_result.get("status") == "success":
+                policy_analysis = policy_result.get("analysis", {})
+                # Cache the result
+                cache_policy_analysis(policy_analysis)
+            else:
+                policy_analysis = {}
 
     if not city_data:
-        print("🏙️  Fetching city data...")
         city_name = policy_analysis.get("target_city", "San Francisco")
-        city_data = collect_city_data_sync(city=city_name)
+        print(f"🏙️  Checking city data cache for {city_name}...")
+        cached_city = get_cached_city_data(city_name)
+        
+        if cached_city:
+            print(f"✅ Using cached city data for {city_name}")
+            city_data = cached_city
+        else:
+            print(f"🔄 Cache miss - fetching fresh city data for {city_name}...")
+            city_data = collect_city_data_sync(city=city_name)
+            # Cache the result
+            if city_data.get("status") == "success" or city_data.get("city"):
+                cache_city_data(city_name, city_data)
 
     if not map_visualization:
-        print("🗺️  Fetching map visualization...")
-        map_result = generate_map_visualization(policy_data=policy_analysis)
-        if map_result.get("status") == "success":
-            map_visualization = map_result
+        print("🗺️  Checking map visualization cache...")
+        cached_map = get_cached_map_visualization(policy_analysis)
+        
+        if cached_map:
+            print("✅ Using cached map visualization")
+            map_visualization = cached_map
         else:
-            map_visualization = {}
+            print("🔄 Cache miss - generating fresh map visualization...")
+            map_result = generate_map_visualization(policy_data=policy_analysis)
+            if map_result.get("status") == "success":
+                map_visualization = map_result
+                # Cache the result
+                cache_map_visualization(policy_analysis, map_visualization)
+            else:
+                map_visualization = {}
 
     # Extract key information
     policy_intent = policy_analysis.get("policy_intent", "Policy implementation")

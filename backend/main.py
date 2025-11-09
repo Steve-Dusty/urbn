@@ -348,6 +348,30 @@ def clear_agent_chat(agent_id: str, session_id: str):
         raise HTTPException(status_code=500, detail=f"Error clearing chat: {str(e)}")
 
 
+# ==================== DATA CACHE API ====================
+
+@app.delete("/cache/data")
+def clear_data_cache():
+    """Clear all data caches (policy analysis, city data, map visualization)."""
+    try:
+        from simulation_agents.data_cache import clear_all_caches
+        clear_all_caches()
+        return {"status": "success", "message": "All data caches cleared"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error clearing data cache: {str(e)}")
+
+
+@app.get("/cache/data/stats")
+def get_data_cache_stats():
+    """Get data cache statistics."""
+    try:
+        from simulation_agents.data_cache import get_cache_stats
+        stats = get_cache_stats()
+        return {"status": "success", "stats": stats}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error getting cache stats: {str(e)}")
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
