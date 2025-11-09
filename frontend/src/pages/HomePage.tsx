@@ -1,16 +1,122 @@
+import { useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { MapPin, Zap, Play } from 'lucide-react';
+import mapboxgl from 'mapbox-gl';
+import 'mapbox-gl/dist/mapbox-gl.css';
+
+const MAPBOX_TOKEN = 'pk.eyJ1Ijoic3RldmVkdXN0eSIsImEiOiJjbWd4am05Z2IxZXhyMmtwdTg1cnU4cmYxIn0.zpfFRf-6xH6ivorwg_ZJ3w';
 
 export function HomePage() {
+  const mapContainer = useRef<HTMLDivElement>(null);
+  const map = useRef<mapboxgl.Map | null>(null);
+  const animationFrameRef = useRef<number | null>(null);
+  const rotationRef = useRef(0);
+
+  useEffect(() => {
+    if (!mapContainer.current || map.current) return;
+
+    mapboxgl.accessToken = MAPBOX_TOKEN;
+
+    // Initialize map with standard style (brighter)
+    map.current = new mapboxgl.Map({
+      container: mapContainer.current,
+      style: 'mapbox://styles/mapbox/standard', // Brighter style
+      center: [-122.4194, 37.7749], // San Francisco
+      zoom: 13,
+      pitch: 60,
+      bearing: -17,
+      antialias: true,
+      interactive: false, // Disable interaction for background
+      attributionControl: false, // Hide attribution
+    });
+
+    // Add 3D buildings layer
+    map.current.on('load', () => {
+      if (!map.current) return;
+
+      map.current.addLayer({
+        'id': '3d-buildings',
+        'source': 'composite',
+        'source-layer': 'building',
+        'filter': ['==', 'extrude', 'true'],
+        'type': 'fill-extrusion',
+        'minzoom': 12,
+        'paint': {
+          'fill-extrusion-color': '#718096', // Brighter gray
+          'fill-extrusion-height': [
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            12, 0,
+            12.05,
+            ['get', 'height']
+          ],
+          'fill-extrusion-base': [
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            12, 0,
+            12.05,
+            ['get', 'min_height']
+          ],
+          'fill-extrusion-opacity': 0.8, // More visible
+          'fill-extrusion-vertical-gradient': true
+        }
+      });
+
+      // Start smooth rotation animation
+      const animate = () => {
+        if (!map.current) return;
+        
+        rotationRef.current += 0.1; // Slow rotation speed
+        
+        // Smoothly rotate the map
+        map.current.easeTo({
+          bearing: -17 + Math.sin(rotationRef.current * 0.01) * 10, // Gentle sway
+          duration: 0, // Instant for smooth animation
+        });
+
+        // Also slowly pan the map
+        const center = map.current.getCenter();
+        const newLng = center.lng + Math.sin(rotationRef.current * 0.005) * 0.001;
+        const newLat = center.lat + Math.cos(rotationRef.current * 0.005) * 0.001;
+        
+        map.current.easeTo({
+          center: [newLng, newLat],
+          duration: 0,
+        });
+
+        animationFrameRef.current = requestAnimationFrame(animate);
+      };
+
+      animate();
+    });
+
+    return () => {
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+      if (map.current) {
+        map.current.remove();
+        map.current = null;
+      }
+    };
+  }, []);
+
   return (
     <div className="relative min-h-screen bg-black overflow-hidden">
-      {/* Animated Background */}
-      <div className="absolute inset-0 bg-gradient-to-br from-purple-900/20 via-black to-blue-900/20"></div>
+      {/* Animated Map Background */}
+      <div ref={mapContainer} className="absolute inset-0 opacity-70" />
+      
+      {/* Lighter overlay for better text readability */}
+      <div className="absolute inset-0 bg-gradient-to-br from-black/50 via-black/40 to-black/50"></div>
+      
+      {/* Subtle animated particles */}
       <div className="absolute inset-0">
-        {[...Array(50)].map((_, i) => (
+        {[...Array(30)].map((_, i) => (
           <div
             key={i}
-            className="absolute w-1 h-1 bg-white/30 rounded-full animate-pulse"
+            className="absolute w-1 h-1 bg-white/20 rounded-full animate-pulse"
             style={{
               left: `${Math.random() * 100}%`,
               top: `${Math.random() * 100}%`,

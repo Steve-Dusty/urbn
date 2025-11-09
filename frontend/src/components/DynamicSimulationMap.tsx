@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import mapboxgl from 'mapbox-gl';
 import { Activity, Layers } from 'lucide-react';
-import { DetailedAnalysisConsole } from './DetailedAnalysisConsole';
 import 'mapbox-gl/dist/mapbox-gl.css';
 
 const MAPBOX_TOKEN = 'pk.eyJ1Ijoic3RldmVkdXN0eSIsImEiOiJjbWd4am05Z2IxZXhyMmtwdTg1cnU4cmYxIn0.zpfFRf-6xH6ivorwg_ZJ3w';
@@ -12,15 +11,18 @@ interface DynamicSimulationMapProps {
   messages: any[];
   simulationId: string | null;
   onDemolitionComplete?: () => void;
+  is3D?: boolean;
+  onToggle3D?: () => void;
 }
 
-export function DynamicSimulationMap({ city, simulationData, messages, simulationId }: DynamicSimulationMapProps) {
+export function DynamicSimulationMap({ city, simulationData, messages, simulationId, is3D: externalIs3D, onToggle3D }: DynamicSimulationMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
   const [constructionMarkers, setConstructionMarkers] = useState<mapboxgl.Marker[]>([]);
   const [publicSentiment, setPublicSentiment] = useState<any[]>([]);
-  const [is3D, setIs3D] = useState(true);
+  const [internalIs3D, setInternalIs3D] = useState(true);
+  const is3D = externalIs3D !== undefined ? externalIs3D : internalIs3D;
   const [showHeatmap, setShowHeatmap] = useState(true);
   const [heatmapStyle, setHeatmapStyle] = useState<'concentric' | 'radius'>('concentric');
   const [buildingOpacity, setBuildingOpacity] = useState(1);
@@ -316,23 +318,46 @@ export function DynamicSimulationMap({ city, simulationData, messages, simulatio
   const toggle3D = () => {
     if (!map.current) return;
     
-    if (is3D) {
-      // Switch to 2D
-      map.current.easeTo({
-        pitch: 0,
-        bearing: 0,
-        duration: 1000
-      });
+    if (onToggle3D) {
+      onToggle3D();
     } else {
-      // Switch to 3D
+      if (is3D) {
+        // Switch to 2D
+        map.current.easeTo({
+          pitch: 0,
+          bearing: 0,
+          duration: 1000
+        });
+      } else {
+        // Switch to 3D
+        map.current.easeTo({
+          pitch: 70,
+          bearing: -17,
+          duration: 1000
+        });
+      }
+      setInternalIs3D(!is3D);
+    }
+  };
+
+  // Sync map view when is3D prop changes
+  useEffect(() => {
+    if (!map.current || !mapLoaded || externalIs3D === undefined) return;
+    
+    if (externalIs3D) {
       map.current.easeTo({
         pitch: 70,
         bearing: -17,
         duration: 1000
       });
+    } else {
+      map.current.easeTo({
+        pitch: 0,
+        bearing: 0,
+        duration: 1000
+      });
     }
-    setIs3D(!is3D);
-  };
+  }, [externalIs3D, mapLoaded]);
 
   // STUNNING HEATMAP OVERLAYS - AI-DRIVEN IMPACT ZONES
   useEffect(() => {
@@ -755,14 +780,6 @@ export function DynamicSimulationMap({ city, simulationData, messages, simulatio
           </div>
         </button>
       </div>
-      
-      {/* Detailed Analysis Console */}
-      {simulationData && (
-        <DetailedAnalysisConsole
-          simulationData={simulationData}
-          onZoomTo={zoomToLocation}
-        />
-      )}
       
       {/* REMOVED LEGEND - DECLUTTERED UI */}
 
